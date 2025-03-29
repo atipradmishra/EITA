@@ -1,14 +1,8 @@
 streamlit
 openai
-langchain 
-faiss-cpu 
-pandas 
-langgraph 
-pyngrok 
-matplotlib 
+pandas
+matplotlib
 boto3
-langchain-community
-tiktoken sentence-transformers
 streamlit-option-menu
 streamlit-lottie
 python-docx
