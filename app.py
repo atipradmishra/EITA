@@ -12,7 +12,6 @@ from datetime import datetime
 from typing import List, Tuple
 from io import BytesIO
 import io
-from sklearn.metrics.pairwise import cosine_similarity
 import matplotlib.pyplot as plt
 
 st.set_page_config(page_title="EITA", layout="wide")
