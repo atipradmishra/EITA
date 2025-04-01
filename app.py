@@ -11,6 +11,7 @@ from datetime import datetime
 from typing import List, Tuple
 from io import BytesIO
 import io
+from sklearn.metrics.pairwise import cosine_similarity
 import matplotlib.pyplot as plt
 
 st.set_page_config(page_title="EITA", layout="wide")
@@ -322,23 +323,23 @@ def validate_against_metadata(file_df: pd.DataFrame, metadata_df: pd.DataFrame, 
 
 
 
-# def store_processed_data_in_sqlite(file_name, report_date, processed_data):
-#     """Stores processed statistics in SQLite."""
-#     conn = sqlite3.connect("data_store.db")
-#     cursor = conn.cursor()
+def store_processed_data_in_sqlite(file_name, report_date, processed_data):
+    """Stores processed statistics in SQLite."""
+    conn = sqlite3.connect("data_store.db")
+    cursor = conn.cursor()
 
-#     # Convert processed statistics to JSON
-#     processed_json = json.dumps(processed_data)
+    # Convert processed statistics to JSON
+    processed_json = json.dumps(processed_data)
 
-#     # Insert processed data into SQLite
-#     cursor.execute('''
-#         INSERT INTO processed_data (file_name, report_date, processed_data, processed_flag)
-#         VALUES (?, ?, ?, ?)
-#     ''', (file_name, report_date, processed_json, 1))
+    # Insert processed data into SQLite
+    cursor.execute('''
+        INSERT INTO processed_data (file_name, report_date, processed_data, processed_flag)
+        VALUES (?, ?, ?, ?)
+    ''', (file_name, report_date, processed_json, 1))
 
-#     conn.commit()
-#     conn.close()
-#     print(f"✅ Processed data for {file_name} stored in SQLite")
+    conn.commit()
+    conn.close()
+    print(f"✅ Processed data for {file_name} stored in SQLite")
 
 def sanitize_for_json(obj):
     if isinstance(obj, list):
@@ -349,31 +350,118 @@ def sanitize_for_json(obj):
         return obj.strftime('%Y-%m-%d')
     return obj
 
-def process_and_store_file(file_name: str, df: pd.DataFrame, cursor):
-    if 'REPORT_DATE' not in df.columns:
-        raise ValueError(f"❌ REPORT_DATE column missing in file: {file_name}")
-
+def process_and_store_file(file_name: str, df: pd.DataFrame, cursor, folder_prefix):
+    # Trim and convert column names to uppercase
     df.columns = df.columns.str.strip().str.upper()
-    df['REPORT_DATE'] = pd.to_datetime(df['REPORT_DATE'], format='%d%b%y', errors='coerce')
-    for col in ['VOLUME', 'MKTVAL', 'TRDVAL', 'TRDPRC']:
+
+    # Convert REPORT_DATE to datetime format
+    def parse_dates(report_date):
+        for fmt in ['%d%b%y', '%d-%m-%Y']:  # Try different formats
+            try:
+                return pd.to_datetime(report_date, format=fmt)
+            except (ValueError, TypeError):
+                continue
+        return None  # Return None instead of NaT for JSON serialization
+
+    df['REPORT_DATE'] = df['REPORT_DATE'].astype(str).str.strip()  # Ensure it's string
+    df['REPORT_DATE'] = df['REPORT_DATE'].apply(parse_dates)  # Apply parsing function
+
+    if folder_prefix == 'CO2':
+        numeric_cols = ['VOLUME', 'MKTVAL', 'TRDVAL', 'TRDPRC']
+    elif folder_prefix == 'NG':
+        numeric_cols = ['VOLUME', 'VOLUME_TOTAL', 'QTY_PHY', 'MKT_VAL', 'QTY_FIN', 'TRD_VAL']
+    elif folder_prefix == 'PW':
+        numeric_cols = ['VOLUME_BL', 'VOLUME_PK', 'VOLUME_OFPK', 'MKT_VAL_BL', 'MKT_VAL_PK', 'MKT_VAL_OFPK', 'TRD_VAL_BL', 'TRD_VAL_PK', 'TRD_VAL_OFPK']
+    else:
+        raise ValueError(f"❌ Unknown folder prefix: {folder_prefix}")
+
+    for col in numeric_cols:
         if col in df.columns:
             df[col] = df[col].astype(str).str.replace(',', '', regex=True)
             df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
 
-    df_daily_stats = df.groupby('REPORT_DATE').agg(
-        TOTAL_VOLUME=('VOLUME', 'sum'), AVG_VOLUME=('VOLUME', 'mean'),
-        MIN_VOLUME=('VOLUME', 'min'), MAX_VOLUME=('VOLUME', 'max'), STD_VOLUME=('VOLUME', 'std'),
-        TOTAL_TRDVAL=('TRDVAL', 'sum'), AVG_TRDVAL=('TRDVAL', 'mean'),
-        MIN_TRDVAL=('TRDVAL', 'min'), MAX_TRDVAL=('TRDVAL', 'max'), STD_TRDVAL=('TRDVAL', 'std'),
-        TOTAL_MKTVAL=('MKTVAL', 'sum'), AVG_MKTVAL=('MKTVAL', 'mean'),
-        MIN_MKTVAL=('MKTVAL', 'min'), MAX_MKTVAL=('MKTVAL', 'max'), STD_MKTVAL=('MKTVAL', 'std'),
-        TOTAL_TRDPRC=('TRDPRC', 'sum'), AVG_TRDPRC=('TRDPRC', 'mean'),
-        MIN_TRDPRC=('TRDPRC', 'min'), MAX_TRDPRC=('TRDPRC', 'max'), STD_TRDPRC=('TRDPRC', 'std')
-    ).reset_index()
+    # Grouping logic for each case
+    if folder_prefix == 'CO2':
+        df_daily_stats = df.groupby('REPORT_DATE').agg(
+            TOTAL_VOLUME=('VOLUME', 'sum'), AVG_VOLUME=('VOLUME', 'mean'),
+            MIN_VOLUME=('VOLUME', 'min'), MAX_VOLUME=('VOLUME', 'max'), STD_VOLUME=('VOLUME', 'std'),
+            TOTAL_TRDVAL=('TRDVAL', 'sum'), AVG_TRDVAL=('TRDVAL', 'mean'),
+            MIN_TRDVAL=('TRDVAL', 'min'), MAX_TRDVAL=('TRDVAL', 'max'), STD_TRDVAL=('TRDVAL', 'std'),
+            TOTAL_MKTVAL=('MKTVAL', 'sum'), AVG_MKTVAL=('MKTVAL', 'mean'),
+            MIN_MKTVAL=('MKTVAL', 'min'), MAX_MKTVAL=('MKTVAL', 'max'), STD_MKTVAL=('MKTVAL', 'std'),
+            TOTAL_TRDPRC=('TRDPRC', 'sum'), AVG_TRDPRC=('TRDPRC', 'mean'),
+            MIN_TRDPRC=('TRDPRC', 'min'), MAX_TRDPRC=('TRDPRC', 'max'), STD_TRDPRC=('TRDPRC', 'std')
+        ).reset_index()
 
-    df_book_stats = df.groupby('BOOK').agg(TOTAL_VOLUME=('VOLUME', 'sum')).reset_index() if 'BOOK' in df.columns else pd.DataFrame()
-    df_tgroup1_stats = df.groupby('TGROUP1').agg(TOTAL_VOLUME=('VOLUME', 'sum')).reset_index() if 'TGROUP1' in df.columns else pd.DataFrame()
-    df_segment_stats = df.groupby('SEGMENT').agg(TOTAL_VOLUME=('VOLUME', 'sum')).reset_index() if 'SEGMENT' in df.columns else pd.DataFrame()
+    elif folder_prefix == 'NG':
+        df_daily_stats = df.groupby('REPORT_DATE').agg(
+            TOTAL_VOLUME=('VOLUME', 'sum'), AVG_VOLUME=('VOLUME', 'mean'),
+            MIN_VOLUME=('VOLUME', 'min'), MAX_VOLUME=('VOLUME', 'max'), STD_VOLUME=('VOLUME', 'std'),
+            TOTAL_VOLUME_TOTAL=('VOLUME_TOTAL', 'sum'), AVG_VOLUME_TOTAL=('VOLUME_TOTAL', 'mean'),
+            MIN_VOLUME_TOTAL=('VOLUME_TOTAL', 'min'), MAX_VOLUME_TOTAL=('VOLUME_TOTAL', 'max'), STD_VOLUME_TOTAL=('VOLUME_TOTAL', 'std'),
+            TOTAL_QTY_PHY=('QTY_PHY', 'sum'), AVG_QTY_PHY=('QTY_PHY', 'mean'),
+            MIN_QTY_PHY=('QTY_PHY', 'min'), MAX_QTY_PHY=('QTY_PHY', 'max'), STD_QTY_PHY=('QTY_PHY', 'std'),
+            TOTAL_MKT_VAL=('MKT_VAL', 'sum'), AVG_MKT_VAL=('MKT_VAL', 'mean'),
+            MIN_MKT_VAL=('MKT_VAL', 'min'), MAX_MKT_VAL=('MKT_VAL', 'max'), STD_MKT_VAL=('MKT_VAL', 'std'),
+            TOTAL_QTY_FIN=('QTY_FIN', 'sum'), AVG_QTY_FIN=('QTY_FIN', 'mean'),
+            MIN_QTY_FIN=('QTY_FIN', 'min'), MAX_QTY_FIN=('QTY_FIN', 'max'), STD_QTY_FIN=('QTY_FIN', 'std'),
+            TOTAL_TRD_VAL=('TRD_VAL', 'sum'), AVG_TRD_VAL=('TRD_VAL', 'mean'),
+            MIN_TRD_VAL=('TRD_VAL', 'min'), MAX_TRD_VAL=('TRD_VAL', 'max'), STD_TRD_VAL=('TRD_VAL', 'std')
+        ).reset_index()
+
+    elif folder_prefix == 'PW':
+        df_daily_stats = df.groupby('REPORT_DATE').agg(
+            TOTAL_VOLUME_BL=('VOLUME_BL', 'sum'), AVG_VOLUME_BL=('VOLUME_BL', 'mean'),
+            MIN_VOLUME_BL=('VOLUME_BL', 'min'), MAX_VOLUME_BL=('VOLUME_BL', 'max'), STD_VOLUME_BL=('VOLUME_BL', 'std'),
+            TOTAL_VOLUME_PK=('VOLUME_PK', 'sum'), AVG_VOLUME_PK=('VOLUME_PK', 'mean'),
+            MIN_VOLUME_PK=('VOLUME_PK', 'min'), MAX_VOLUME_PK=('VOLUME_PK', 'max'), STD_VOLUME_PK=('VOLUME_PK', 'std'),
+            TOTAL_VOLUME_OFPK=('VOLUME_OFPK', 'sum'), AVG_VOLUME_OFPK=('VOLUME_OFPK', 'mean'),
+            MIN_VOLUME_OFPK=('VOLUME_OFPK', 'min'), MAX_VOLUME_OFPK=('VOLUME_OFPK', 'max'), STD_VOLUME_OFPK=('VOLUME_OFPK', 'std'),
+            TOTAL_MKT_VAL_BL=('MKT_VAL_BL', 'sum'), AVG_MKT_VAL_BL=('MKT_VAL_BL', 'mean'),
+            MIN_MKT_VAL_BL=('MKT_VAL_BL', 'min'), MAX_MKT_VAL_BL=('MKT_VAL_BL', 'max'), STD_MKT_VAL_BL=('MKT_VAL_BL', 'std'),
+            TOTAL_MKT_VAL_PK=('MKT_VAL_PK', 'sum'), AVG_MKT_VAL_PK=('MKT_VAL_PK', 'mean'),
+            MIN_MKT_VAL_PK=('MKT_VAL_PK', 'min'), MAX_MKT_VAL_PK=('MKT_VAL_PK', 'max'), STD_MKT_VAL_PK=('MKT_VAL_PK', 'std'),
+            TOTAL_MKT_VAL_OFPK=('MKT_VAL_OFPK', 'sum'), AVG_MKT_VAL_OFPK=('MKT_VAL_OFPK', 'mean'),
+            MIN_MKT_VAL_OFPK=('MKT_VAL_OFPK', 'min'), MAX_MKT_VAL_OFPK=('MKT_VAL_OFPK', 'max'), STD_MKT_VAL_OFPK=('MKT_VAL_OFPK', 'std'),
+            TOTAL_TRD_VAL_BL=('TRD_VAL_BL', 'sum'), AVG_TRD_VAL_BL=('TRD_VAL_BL', 'mean'),
+            MIN_TRD_VAL_BL=('TRD_VAL_BL', 'min'), MAX_TRD_VAL_BL=('TRD_VAL_BL', 'max'), STD_TRD_VAL_BL=('TRD_VAL_BL', 'std'),
+            TOTAL_TRD_VAL_PK=('TRD_VAL_PK', 'sum'), AVG_TRD_VAL_PK=('TRD_VAL_PK', 'mean'),
+            MIN_TRD_VAL_PK=('TRD_VAL_PK', 'min'), MAX_TRD_VAL_PK=('TRD_VAL_PK', 'max'), STD_TRD_VAL_PK=('TRD_VAL_PK', 'std'),
+            TOTAL_TRD_VAL_OFPK=('TRD_VAL_OFPK', 'sum'), AVG_TRD_VAL_OFPK=('TRD_VAL_OFPK', 'mean'),
+            MIN_TRD_VAL_OFPK=('TRD_VAL_OFPK', 'min'), MAX_TRD_VAL_OFPK=('TRD_VAL_OFPK', 'max'), STD_TRD_VAL_OFPK=('TRD_VAL_OFPK', 'std')
+        ).reset_index()
+
+    # Aggregation for BOOK, TGROUP1, SEGMENT
+    if folder_prefix == 'PW':
+        df_book_stats = df.groupby('BOOK').agg(
+            TOTAL_VOLUME_BL=('VOLUME_BL', 'sum'),
+            TOTAL_VOLUME_PK=('VOLUME_PK', 'sum'),
+            TOTAL_VOLUME_OFPK=('VOLUME_OFPK', 'sum')
+        ).reset_index() if 'BOOK' in df.columns else pd.DataFrame()
+
+        df_tgroup1_stats = df.groupby('TGROUP1').agg(
+            TOTAL_VOLUME_BL=('VOLUME_BL', 'sum'),
+            TOTAL_VOLUME_PK=('VOLUME_PK', 'sum'),
+            TOTAL_VOLUME_OFPK=('VOLUME_OFPK', 'sum')
+        ).reset_index() if 'TGROUP1' in df.columns else pd.DataFrame()
+
+        df_segment_stats = df.groupby('SEGMENT').agg(
+            TOTAL_VOLUME_BL=('VOLUME_BL', 'sum'),
+            TOTAL_VOLUME_PK=('VOLUME_PK', 'sum'),
+            TOTAL_VOLUME_OFPK=('VOLUME_OFPK', 'sum')
+        ).reset_index() if 'SEGMENT' in df.columns else pd.DataFrame()
+
+        df_bucket_stats = df.groupby('BUCKET').agg(
+            TOTAL_VOLUME_BL=('VOLUME_BL', 'sum'),
+            TOTAL_VOLUME_PK=('VOLUME_PK', 'sum'),
+            TOTAL_VOLUME_OFPK=('VOLUME_OFPK', 'sum')
+        ).reset_index() if 'BUCKET' in df.columns else pd.DataFrame()
+
+    else:  # Default case for CO2 and NG
+        df_book_stats = df.groupby('BOOK').agg(TOTAL_VOLUME=('VOLUME', 'sum')).reset_index() if 'BOOK' in df.columns else pd.DataFrame()
+        df_tgroup1_stats = df.groupby('TGROUP1').agg(TOTAL_VOLUME=('VOLUME', 'sum')).reset_index() if 'TGROUP1' in df.columns else pd.DataFrame()
+        df_segment_stats = df.groupby('SEGMENT').agg(TOTAL_VOLUME=('VOLUME', 'sum')).reset_index() if 'SEGMENT' in df.columns else pd.DataFrame()
+        df_bucket_stats = df.groupby('BUCKET').agg(TOTAL_VOLUME=('VOLUME', 'sum')).reset_index() if 'BUCKET' in df.columns else pd.DataFrame()
 
     combined_json = {
         "daily_totals": df_daily_stats.to_dict(orient='records'),
@@ -381,6 +469,7 @@ def process_and_store_file(file_name: str, df: pd.DataFrame, cursor):
         "book_stats": df_book_stats.to_dict(orient='records'),
         "tgroup1_stats": df_tgroup1_stats.to_dict(orient='records'),
         "segment_stats": df_segment_stats.to_dict(orient='records'),
+        "bucket_stats": df_bucket_stats.to_dict(orient='records'),
     }
 
     sanitized_json = sanitize_for_json(combined_json)
@@ -388,6 +477,7 @@ def process_and_store_file(file_name: str, df: pd.DataFrame, cursor):
         "INSERT INTO file_tracking (file_name, date_processed, json_contents, is_processed) VALUES (?, datetime('now'), ?, 1)",
         (file_name, json.dumps(sanitized_json))
     )
+
     return df
 
 def process_files_from_s3_folder(bucket_name, folder_prefix):
@@ -417,7 +507,7 @@ def process_files_from_s3_folder(bucket_name, folder_prefix):
                 obj_data = s3.get_object(Bucket=bucket_name, Key=file_key)
                 file_stream = io.BytesIO(obj_data["Body"].read())
                 df = pd.read_csv(file_stream)
-                df_processed = process_and_store_file(file_name, df, cursor)
+                df_processed = process_and_store_file(file_name, df, cursor,folder_prefix)
                 conn.commit()
                 print(f"✅ Processed and saved: {file_name}")
             except Exception as e:
@@ -554,103 +644,103 @@ def sanitize_record(record: dict) -> dict:
             sanitized[k] = v
     return sanitized
 
-# def store_computed_embeddings(json_data, table_name="computed_embeddings"):
-#     if not json_data:
-#         st.warning("No computed data available to store embeddings.")
-#         return
-#     conn = sqlite3.connect(COMPUTED_DB)
-#     cursor = conn.cursor()
-#     cursor.execute(f"DROP TABLE IF EXISTS {table_name};")
-#     cursor.execute(f"""
-#         CREATE TABLE {table_name} (
-#             id INTEGER PRIMARY KEY AUTOINCREMENT,
-#             json_data TEXT,
-#             embedding BLOB
-#         );
-#     """)
-#     texts = []
-#     debug_expander = st.expander("Debug: Raw computed records")
-#     for record in json_data:
-#         try:
-#             sanitized = sanitize_record(record)
-#             text = json.dumps(sanitized)
-#             texts.append(text)
-#         except Exception as e:
-#             debug_expander.error(f"Error serializing record: {record}\nError: {e}")
-#     if not texts:
-#         st.error("No records could be serialized for embedding.")
-#         return
-#     successful_texts = []
-#     successful_embeddings = []
-#     for text in texts:
-#         try:
-#             approx_tokens = len(text.split())
-#             if approx_tokens > 3000:
-#                 st.warning(f"Record is very long (approx {approx_tokens} tokens). Attempting to embed. Preview: {text[:200]}...")
-#             response = client.embeddings.create(model=EMBEDDING_MODEL, input=[text])
-#             embedding = np.array(response.data[0].embedding, dtype='float32')
-#             successful_texts.append(text)
-#             successful_embeddings.append(embedding)
-#         except Exception as e:
-#             st.error(f"Error embedding text (length {len(text)} chars): {text[:200]}...\nError: {e}")
-#     for text, emb in zip(successful_texts, successful_embeddings):
-#         blob = emb.tobytes()
-#         cursor.execute(f"INSERT INTO {table_name} (json_data, embedding) VALUES (?, ?)", (text, blob))
-#     conn.commit()
-#     conn.close()
-#     st.success(f"Computed embeddings stored in SQLite table '{table_name}'.")
+def store_computed_embeddings(json_data, table_name="computed_embeddings"):
+    if not json_data:
+        st.warning("No computed data available to store embeddings.")
+        return
+    conn = sqlite3.connect(COMPUTED_DB)
+    cursor = conn.cursor()
+    cursor.execute(f"DROP TABLE IF EXISTS {table_name};")
+    cursor.execute(f"""
+        CREATE TABLE {table_name} (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            json_data TEXT,
+            embedding BLOB
+        );
+    """)
+    texts = []
+    debug_expander = st.expander("Debug: Raw computed records")
+    for record in json_data:
+        try:
+            sanitized = sanitize_record(record)
+            text = json.dumps(sanitized)
+            texts.append(text)
+        except Exception as e:
+            debug_expander.error(f"Error serializing record: {record}\nError: {e}")
+    if not texts:
+        st.error("No records could be serialized for embedding.")
+        return
+    successful_texts = []
+    successful_embeddings = []
+    for text in texts:
+        try:
+            approx_tokens = len(text.split())
+            if approx_tokens > 3000:
+                st.warning(f"Record is very long (approx {approx_tokens} tokens). Attempting to embed. Preview: {text[:200]}...")
+            response = client.embeddings.create(model=EMBEDDING_MODEL, input=[text])
+            embedding = np.array(response.data[0].embedding, dtype='float32')
+            successful_texts.append(text)
+            successful_embeddings.append(embedding)
+        except Exception as e:
+            st.error(f"Error embedding text (length {len(text)} chars): {text[:200]}...\nError: {e}")
+    for text, emb in zip(successful_texts, successful_embeddings):
+        blob = emb.tobytes()
+        cursor.execute(f"INSERT INTO {table_name} (json_data, embedding) VALUES (?, ?)", (text, blob))
+    conn.commit()
+    conn.close()
+    st.success(f"Computed embeddings stored in SQLite table '{table_name}'.")
 
-# def create_vector_embedings(bucket_name):
-#         try:
-#             s3 = boto3.client("s3", aws_access_key_id=aws_access_key, aws_secret_access_key=aws_secret_key)
-#             objects = s3.list_objects_v2(Bucket=bucket_name).get("Contents", [])
+def create_vector_embedings(bucket_name):
+        try:
+            s3 = boto3.client("s3", aws_access_key_id=aws_access_key, aws_secret_access_key=aws_secret_key)
+            objects = s3.list_objects_v2(Bucket=bucket_name).get("Contents", [])
 
-#             computed_stats_json.clear()
-#             for obj in objects:
-#                 filename = obj["Key"]
-#                 if not filename.lower().endswith(".csv"):
-#                     continue
-#                 try:
-#                     s3.download_file(bucket_name, filename, filename)
-#                     df = pd.read_csv(filename)
-#                     if df.empty or df.columns.size == 0:
-#                         continue
-#                     df.columns = df.columns.str.strip().str.upper()
-#                     if "REPORT_DATE" in df.columns:
-#                         df["REPORT_DATE"] = pd.to_datetime(df["REPORT_DATE"], errors='coerce').dt.strftime('%Y-%m-%d')
-#                     # Compute aggregated statistics using selected numeric fields
-#                     stats = compute_statistics_and_save(df, filename, selected_fields=selected_fields_ui)
-#                     if stats:
-#                         computed_stats_json.extend(stats)
-#                     save_computed_data_to_sqlite(stats, table_name="computed_data")
-#                     # Only store embeddings for computed aggregated statistics (no raw data embeddings)
-#                     store_computed_embeddings(stats, table_name="computed_embeddings")
-#                 except Exception as e:
-#                     st.error(f"❌ Error processing {filename}: {e}")
-#         except Exception as e:
-#             st.error(f"❌ S3 Processing Error: {e}")
+            computed_stats_json.clear()
+            for obj in objects:
+                filename = obj["Key"]
+                if not filename.lower().endswith(".csv"):
+                    continue
+                try:
+                    s3.download_file(bucket_name, filename, filename)
+                    df = pd.read_csv(filename)
+                    if df.empty or df.columns.size == 0:
+                        continue
+                    df.columns = df.columns.str.strip().str.upper()
+                    if "REPORT_DATE" in df.columns:
+                        df["REPORT_DATE"] = pd.to_datetime(df["REPORT_DATE"], errors='coerce').dt.strftime('%Y-%m-%d')
+                    # Compute aggregated statistics using selected numeric fields
+                    stats = compute_statistics_and_save(df, filename, selected_fields=selected_fields_ui)
+                    if stats:
+                        computed_stats_json.extend(stats)
+                    save_computed_data_to_sqlite(stats, table_name="computed_data")
+                    # Only store embeddings for computed aggregated statistics (no raw data embeddings)
+                    store_computed_embeddings(stats, table_name="computed_embeddings")
+                except Exception as e:
+                    st.error(f"❌ Error processing {filename}: {e}")
+        except Exception as e:
+            st.error(f"❌ S3 Processing Error: {e}")
 
-# def search_computed_data(query: str, top_k=2) -> List[Tuple[str, float]]:
-#     q_embed = client.embeddings.create(model=EMBEDDING_MODEL, input=[query]).data[0].embedding
-#     q_vec = np.array(q_embed, dtype='float32').reshape(1, -1)
-#     conn = sqlite3.connect(COMPUTED_DB)
-#     cursor = conn.cursor()
-#     cursor.execute("SELECT json_data, embedding FROM computed_embeddings")
-#     rows = cursor.fetchall()
-#     conn.close()
-#     computed_texts = []
-#     computed_embeddings = []
-#     for row in rows:
-#         text = row[0]
-#         emb_array = np.frombuffer(row[1], dtype='float32')
-#         computed_texts.append(text)
-#         computed_embeddings.append(emb_array)
-#     if not computed_embeddings:
-#         st.error("No computed embeddings available for search. Please process some data first.")
-#         return []
-#     sims = cosine_similarity(q_vec, np.vstack(computed_embeddings))[0]
-#     top_indices = np.argsort(sims)[::-1][:top_k]
-#     return [(computed_texts[i], sims[i]) for i in top_indices]
+def search_computed_data(query: str, top_k=2) -> List[Tuple[str, float]]:
+    q_embed = client.embeddings.create(model=EMBEDDING_MODEL, input=[query]).data[0].embedding
+    q_vec = np.array(q_embed, dtype='float32').reshape(1, -1)
+    conn = sqlite3.connect(COMPUTED_DB)
+    cursor = conn.cursor()
+    cursor.execute("SELECT json_data, embedding FROM computed_embeddings")
+    rows = cursor.fetchall()
+    conn.close()
+    computed_texts = []
+    computed_embeddings = []
+    for row in rows:
+        text = row[0]
+        emb_array = np.frombuffer(row[1], dtype='float32')
+        computed_texts.append(text)
+        computed_embeddings.append(emb_array)
+    if not computed_embeddings:
+        st.error("No computed embeddings available for search. Please process some data first.")
+        return []
+    sims = cosine_similarity(q_vec, np.vstack(computed_embeddings))[0]
+    top_indices = np.argsort(sims)[::-1][:top_k]
+    return [(computed_texts[i], sims[i]) for i in top_indices]
 
 def trim_context(text: str, max_chars: int = 3000) -> str:
     if len(text) > max_chars:
