@@ -11,6 +11,7 @@ from datetime import datetime
 from typing import List, Tuple
 from io import BytesIO
 import io
+import os
 from sklearn.metrics.pairwise import cosine_similarity
 import matplotlib.pyplot as plt
 
