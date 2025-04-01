@@ -20,7 +20,7 @@ st.set_page_config(page_title="EITA", layout="wide")
 EMBEDDING_MODEL = "text-embedding-ada-002"
 DB_NAME = "vector_chunks.db"
 COMPUTED_DB = "data.db"
-VALID_BUCKET = "etrm-etai-poc"
+VALID_BUCKET = "etrm-etai-poc-chub"
 REJECTED_BUCKET = "etai-rejected-files"
 
 aws_access_key = os.getenv("AWS_ACCESS_KEY")
