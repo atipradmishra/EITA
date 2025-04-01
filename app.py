@@ -1108,7 +1108,7 @@ else:
         name = st.text_input("RAG  Agent Name")
         col1, col2 = st.columns(2)
         with col1:
-          bucket = st.selectbox("Select Bucket Name(S3)", ["etrm-etai-poc", "etrm-etai-poc-ng"])
+          bucket = st.selectbox("Select Bucket Name(S3)", ["etrm-etai-poc-chub","etrm-etai-poc", "etrm-etai-poc-ng"])
         with col2:
           prefix = st.selectbox("Select Prefix", list(prefix_fields.keys()), index=0)
 
