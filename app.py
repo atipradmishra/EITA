@@ -22,8 +22,8 @@ COMPUTED_DB = "data.db"
 VALID_BUCKET = "etrm-etai-poc"
 REJECTED_BUCKET = "etai-rejected-files"
 
-aws_access_key = st.secrets["AWS_ACCESS_KEY"]
-aws_secret_key = st.secrets["AWS_SECRET_KEY"]
+aws_access_key = os.getenv("AWS_ACCESS_KEY")
+aws_secret_key = os.getenv("AWS_SECRET_KEY")
 
 client = OpenAI(api_key= st.secrets["OPENAI_API_KEY"])
 
