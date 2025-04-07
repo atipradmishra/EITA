@@ -9,3 +9,4 @@ python-docx
 numpy
 bcrypt
 altair
+faiss-cpu
