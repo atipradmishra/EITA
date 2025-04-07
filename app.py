@@ -16,6 +16,7 @@ import altair as alt
 from sklearn.feature_extraction.text import TfidfVectorizer
 import faiss
 from openai import OpenAI
+import os
 
 # --- Streamlit page configuration ---
 st.set_page_config(page_title="EITA", layout="wide")
