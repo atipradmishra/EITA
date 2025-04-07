@@ -8,3 +8,4 @@ streamlit-lottie
 python-docx
 numpy
 bcrypt
+altair
