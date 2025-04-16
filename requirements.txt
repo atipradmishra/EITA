@@ -10,3 +10,5 @@ numpy
 bcrypt
 altair
 faiss-cpu
+scikit-learn
+plotly
