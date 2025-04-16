@@ -1742,10 +1742,10 @@ else:
 
     elif st.session_state.sub_section == "Dashboard":
         st.subheader("📚 Dashboard")
-        if st.button("🔄 Update from S3"):
-            with sqlite3.connect(DB_NAME) as conn:
-                process_and_save(conn, VALID_BUCKET, aws_access_key, aws_secret_key)
-            st.success("Data updated!")
+        # if st.button("🔄 Update from S3"):
+        #     with sqlite3.connect(DB_NAME) as conn:
+        #         process_and_save(conn, VALID_BUCKET, aws_access_key, aws_secret_key)
+        #     st.success("Data updated!")
         
         data = load_data_for_dashboard()
         segment_json = data.get("by_segment", {})
