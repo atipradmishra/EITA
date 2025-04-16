@@ -30,7 +30,7 @@ st.set_page_config(page_title="EITA", layout="wide")
 EMBEDDING_MODEL = "text-embedding-ada-002"
 DB_NAME = "vector_chunks.db"
 COMPUTED_DB = "data.db"
-VALID_BUCKET = "etrm-etai-poc"
+VALID_BUCKET = "etrm-etai-poc-chub"
 REJECTED_BUCKET = "etai-rejected-files"
 
 aws_access_key = os.getenv("AWS_ACCESS_KEY")
@@ -1714,7 +1714,7 @@ else:
         name = st.text_input("RAG  Agent Name")
         col1, col2 = st.columns(2)
         with col1:
-            bucket = st.selectbox("Select Bucket Name(S3)", ["etrm-etai-poc", "etrm-etai-poc-ng"])
+            bucket = st.selectbox("Select Bucket Name(S3)", ["etrm-etai-poc-chub","etrm-etai-poc", "etrm-etai-poc-ng"])
         with col2:
             prefix = st.selectbox("Select Prefix", list(prefix_fields.keys()), index=0)
         col3, col4 = st.columns(2)
