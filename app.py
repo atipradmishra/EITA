@@ -19,7 +19,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 import faiss
 from openai import OpenAI
 from business_context import load_business_context
-from DataProcessing.GraphDataProcess import process_and_save, save_jsondata_to_db, process_csv_data_to_json , save_rawdata_to_db
+from DataProcessing.GraphDataProcess import process_and_save_from_s3, save_jsondata_to_db, process_csv_data_to_json , save_rawdata_to_db, process_and_save_byfile
 from GraphFunctions.dashboardgraphs import show_top5_movers,plot_delta_market_value_by_horizon, plot_delta_market_value_by_horizon_by_tgroup1, plot_delta_volume_by_horizon, plot_delta_volume_by_horizon_by_tgroup1, plot_delta_volume_by_horizon_by_bookattr8,plot_delta_market_value_by_horizon_by_bookattr8
 from GraphFunctions.heatmaptable import plot_heatmap
 from GraphFunctions.dashboardcards import show_nop_cards,render_summary_card
@@ -291,7 +291,7 @@ def sidebar_menu():
         sub_sections = {
             "Data Management AI Agent": ["Pipeline Dashboard", "Data Pipeline", "Processed Data"],
             "RAG AI Agent": ["RAG Dashboard", "Configure & Upload", "Fine Tuning", "Settings"],
-            "Application AI Agent": ["Dashboard","Energy Tradeing Analysis", "Graph Query", "Deviation Analysis", "Root Cause Analysis", "Analysis History", "User Feedback"]
+            "Application AI Agent": ["Dashboard","Energy Trading Analysis", "Graph Query", "Deviation Analysis", "Root Cause Analysis", "Analysis History", "User Feedback"]
         }
         if st.session_state.sub_section not in sub_sections[main_section]:
             st.session_state.sub_section = sub_sections[main_section][0]
@@ -656,7 +656,7 @@ def query_sqlite_json_with_openai(user_question, category=None):
     {business_context_text}
 
     🗂️ PREPROCESSED DATA (Official Trading Statistics):
-    This section contains structured trading data retrieved from SQLite for multiple files {category_context}.
+    This section contains structured trading data for multiple files {category_context}.
     {all_context}
 
     ⚠️ INSTRUCTION (STRICTLY FOLLOW THESE STEPS — DO NOT IGNORE):
@@ -1667,16 +1667,7 @@ else:
                     for f in raw_files3:
                         file_name = f.name
                         conn = sqlite3.connect(DB_NAME)
-                        try:
-                                df = pd.read_csv(f)
-                                df.replace(",", "", regex=True, inplace=True)
-                                df['MKT_VAL_BL'] = df['MKT_VAL_BL'].astype(str).str.replace(',', '').astype(float)
-                                df[['VOLUME_BL', 'MKT_VAL_BL']] = df[['VOLUME_BL', 'MKT_VAL_BL']].apply(pd.to_numeric, errors='coerce')
-                                df['source_file'] = file_name
-                                desired_columns = ['REPORT_DATE', 'SEGMENT', 'TGROUP1', 'BUCKET', 'HORIZON', 'VOLUME_BL', 'MKT_VAL_BL', 'source_file']
-                                save_rawdata_to_db(df[desired_columns], conn, file_name)
-                        except Exception as e:
-                                print(f"❌ Error processing file {file_name}: {e}")
+                        process_and_save_byfile(conn, f)
                         try:
                             f.seek(0)
                             df = pd.read_csv(f)
@@ -1744,7 +1735,7 @@ else:
         st.subheader("📚 Dashboard")
         # if st.button("🔄 Update from S3"):
         #     with sqlite3.connect(DB_NAME) as conn:
-        #         process_and_save(conn, VALID_BUCKET, aws_access_key, aws_secret_key)
+        #         process_and_save_from_s3(conn, VALID_BUCKET, aws_access_key, aws_secret_key)
         #     st.success("Data updated!")
         
         data = load_data_for_dashboard()
@@ -1791,7 +1782,7 @@ else:
         with col6:
             show_top5_movers(data)
         
-    elif st.session_state.sub_section in ["Energy Trading Analysis", "Energy Tradeing Analysis"]:
+    elif st.session_state.sub_section in ["Energy Trading Analysis", "Energy Trading Analysis"]:
         if "query_answer" not in st.session_state:
             st.session_state["query_answer"] = None
         if "feedback_submitted" not in st.session_state:

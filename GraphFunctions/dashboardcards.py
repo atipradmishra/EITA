@@ -120,7 +120,14 @@ def generate_segment_summary_from_bl_data(summary,client):
     latest_two = sorted_dates[:2]
 
     # Build a filtered summary with only those dates
-    filtered_summary = {date: summary[date] for date in latest_two}
+    filtered_summary = {
+        date: {
+            'by_segment_and_horizon': summary[date]['by_segment_and_horizon'],
+            'by_book_and_horizon': summary[date]['by_book_and_horizon']
+            }
+            for date in latest_two
+    }
+
 
     business_dict = load_business_context()
 
@@ -145,8 +152,8 @@ def generate_segment_summary_from_bl_data(summary,client):
     {filtered_summary}
 
     Please return a concise, executive-level summary (max 50 words) describing:
-    - Key trends in 'base load' volume and market value
-    - Which Book, Segment, or Horizon had the largest impact on changes
+    - Key trends in base load for volume and market value
+    - Which Book, Segment, or Horizon had the largest impact on changes and show the corresponding values
     - Any anomalies or sharp deviations
 
     The summary should be suitable for a business dashboard and easily digestible by senior leadership.
