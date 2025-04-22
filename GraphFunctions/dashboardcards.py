@@ -5,6 +5,7 @@ from collections import defaultdict
 from datetime import datetime
 from openai import OpenAI
 from business_context import load_business_context
+from datetime import date
 
 
 def show_nop_cards(processed_data):
@@ -94,9 +95,8 @@ def render_mkt_nop_card(volume, delta, latest_date):
 
     st.markdown(card_html, unsafe_allow_html=True)
 
-def render_summary_card(summary,client):
-
-    summary = generate_segment_summary_from_bl_data(summary,client)
+def render_summary_card(summary_input, client, conn):
+    summary = get_or_generate_summary(summary_input, client, conn)
 
     card_html = f"""
     <div style="background-color: white; padding: 20px; border-radius: 12px;
@@ -112,14 +112,31 @@ def render_summary_card(summary,client):
 
     st.markdown(card_html, unsafe_allow_html=True)
 
+def get_or_generate_summary(summary_input, client ,conn):
+
+    c = conn.cursor()
+
+    today = date.today().isoformat()
+
+    c.execute("SELECT summary FROM daily_ai_summary WHERE date = ?", (today,))
+    result = c.fetchone()
+
+    if result:
+        summary = result[0]
+    else:
+        summary = generate_segment_summary_from_bl_data(summary_input, client)
+        c.execute("INSERT INTO daily_ai_summary (summary, date) VALUES (?, ?)", (summary, today))
+        conn.commit()
+
+    conn.close()
+    return summary
+
 def generate_segment_summary_from_bl_data(summary,client):
 
     sorted_dates = sorted(summary.keys(), key=lambda d: datetime.strptime(d, "%Y-%m-%d"), reverse=True)
     
-    # Keep only the latest two dates
     latest_two = sorted_dates[:2]
 
-    # Build a filtered summary with only those dates
     filtered_summary = {
         date: {
             'by_segment_and_horizon': summary[date]['by_segment_and_horizon'],
@@ -152,7 +169,7 @@ def generate_segment_summary_from_bl_data(summary,client):
     {filtered_summary}
 
     Please return a concise, executive-level summary (max 50 words) describing:
-    - Key trends in base load for volume and market value
+    - Key trends in Baseload for volume and market value
     - Which Book, Segment, or Horizon had the largest impact on changes and show the corresponding values
     - Any anomalies or sharp deviations
 
