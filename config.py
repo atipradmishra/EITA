@@ -1,4 +1,6 @@
 from openai import OpenAI
+import os
+import streamlit as st
 
 DB_NAME = "vector_chunks.db"
 VALID_BUCKET = "etrm-etai-poc-chub"
