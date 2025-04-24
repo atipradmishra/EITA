@@ -9,8 +9,7 @@ import io
 import re
 import datetime
 from sklearn.feature_extraction.text import TfidfVectorizer
-from business_context import load_business_context
-from DbUtils.DbOperations import load_feedback_data
+from DbUtils.DbOperations import load_feedback_data, load_business_context
 from config import aws_access_key, aws_secret_key, client, DB_NAME, VALID_BUCKET, REJECTED_BUCKET
 
 def upload_to_s3(file, filename, bucket):

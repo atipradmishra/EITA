@@ -10,5 +10,6 @@ numpy
 bcrypt
 altair
 faiss-cpu
-scikit-learn
 plotly
+scikit-learn
+openpyxl

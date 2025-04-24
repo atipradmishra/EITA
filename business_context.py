@@ -1,144 +1,56 @@
-# business_context.py
+import pandas as pd
+import os
 
-def load_business_context():
-    return {
-        # Commodity-level labels
-        "PW": "Power",
-        "NG": "Natural Gas",
-        "CO2": "Carbon Emissions",
-        "ELCE": "Electricity",
+def load_business_context(excel_path: str = "ETAI Business domain Dictionary PW.xlsx") -> dict:
+    """
+    Dynamically load business context definitions from an Excel workbook with arbitrary sheet
+    and column names, using positional inference:
 
-        # Power-specific business fields
-        "BOOK_ATTR6": {
-            "B2B": "Business-to-business (commercial customers)",
-            "B2C": "Retail customers",
-            "ELCE": "Electricity (Renewable generation)",
-            "GEN": "Non-renewable Generation",
-            "OPT": "Optimization Contracts"
-        },
-        "BOOK_ATTR7": {
-            "ALLOC": "Allocated Cost Portfolio",
-            "UNALLOC": "Unallocated Cost Portfolio"
-        },
-        "BOOK_ATTR8": {
-            "NUCLEAR": "Nuclear Generation",
-            "HYDRO": "Hydroelectric Generation",
-            "SOLAR": "Solar Generation",
-            "WIND": "Wind Generation",
-            "OTHER": "Waste-based Generation"
-        },
+    - Two-column sheets: interprets first column as key, second as value.
+    - Four-column sheets: interprets first column as key, third as value.
+    - Other formats: falls back to list of row dictionaries.
 
-        # Primary trading strategy and segment labels
-        "TGROUP1": {
-            "BACK TO BACK": "Matched buy-sell hedging",
-            "INDEX-DA": "Day-ahead index-based trading",
-            "FIXED": "Fixed price contract",
-            "NUKEFLEET": "Nuclear fleet strategy",
-            "GAS ENGINE": "Fast-response flexible gas generation",
-            "CHOICE": "Customer choice product",
-            "EASYFIX": "Simple fixed-price strategy",
-            "BATTERY STORAGE": "Storage-based asset strategy"
-        },
+    Args:
+        excel_path: Path to the Excel file.
 
-        # Secondary trading classification (less used)
-        "TGROUP2": {
-            "DEFAULT": "Default sub-strategy"
-        },
+    Returns:
+        A tuple containing:
+            - business_dict: A dict mapping normalized sheet names to code-to-label mappings or records.
+            - excel_file_name: The name of the uploaded Excel file.
+    """
+    if not os.path.exists(excel_path):
+        raise FileNotFoundError(f"Excel file '{excel_path}' not found.")
 
-        # Method field (position calc logic)
-        "METHOD": {
-            "Volumetric": "Physical volume tracking",
-            "Financial": "Value-based exposure tracking"
-        },
+    # Extract the filename from the path
+    excel_file_name = os.path.basename(excel_path)
 
-        # Segment label mappings
-        "SEGMENT": {
-            "ELCE": "Electricity segment",
-            "NUCLEAR": "Nuclear generation segment",
-            "B2B": "Business customer segment",
-            "B2C": "Retail customer segment",
-            "OPT": "Options/Derivatives"
-        },
+    # Read all sheets
+    sheets = pd.read_excel(excel_path, sheet_name=None)
+    business_dict = {}
 
-        # Book-related labels
-        "BOOK": "Trading book",
-        "BOOK_ATTR": {
-            "BOOK_ATTR6": "Business Classification",
-            "BOOK_ATTR7": "Cost Allocation Type",
-            "BOOK_ATTR8": "Business Classification"  # Updated as requested
-        },
+    for sheet_name, df in sheets.items():
+        # Drop entirely empty rows
+        df = df.dropna(how="all").copy()
+        # Reset column names to positional labels
+        df.columns = [f"col_{i}" for i in range(len(df.columns))]
 
-        # Time dimensions
-        "BUCKET": {
-            "DAH": "Day Ahead",
-            "MONTH": "Monthly",
-            "QUARTER": "Quarterly",
-            "SEASON": "Seasonal"
-        },
-        "HORIZON": {
-            "DAH": "Day Ahead",
-            "D+2_EOP": "End of Prompt",
-            "EOP_M+1": "Prompt to Next Month",
-            "JAN-25": "January 2025",
-            "Q1-2025": "Quater 1 2025",
-            "SUMMER-25": "Summer 2025",
-            "WINTER-28": "Winter 2028"
-        },
+        # Determine mapping by column count
+        if df.shape[1] >= 2:
+            if df.shape[1] == 2:
+                # Two-column: key->value
+                mapping = dict(zip(df.iloc[:, 0].astype(str), df.iloc[:, 1].astype(str)))
+            elif df.shape[1] >= 4:
+                # Four or more columns: use first as key, third as meaning/value
+                mapping = dict(zip(df.iloc[:, 0].astype(str), df.iloc[:, 2].astype(str)))
+            else:
+                # Three columns: assume second is value
+                mapping = dict(zip(df.iloc[:, 0].astype(str), df.iloc[:, 1].astype(str)))
+        else:
+            # Fallback: list of records
+            mapping = df.to_dict(orient="records")
 
-        # Market access methods (mainly for PW/NG)
-        "USR_VAL4": {
-            "FIXED": "Fixed price market",
-            "N2EX": "UK electricity market",
-            "NORDPOOL": "Nordic power market",
-            "EPEX": "European power exchange",
-            "EDEM": "European day-ahead/season auction market"
-        },
+        # Normalize sheet name to uppercase key without spaces or special chars
+        key = sheet_name.strip().upper().replace(" ", "_")
+        business_dict[key] = mapping
 
-        # Volume Fields
-        "VOLUME_FIELDS": {
-            "VOLUME_BL": "Volume Baseload",
-            "VOLUME_PK": "Peak load volume",
-            "VOLUME_OFPK": "Off-peak volume",
-            "VOLUME_TOTAL": "Total traded volume (NG)",
-            "QTY_PHY": "Physical quantity",
-            "QTY_FIN": "Financial quantity"
-        },
-
-        # Market Value Fields
-        "MKTVAL_FIELDS": {
-            "MKT_VAL_BL": "Market Value Baseload",
-            "MKT_VAL_PK": "Peak load market value",
-            "MKT_VAL_OFPK": "Off-peak market value",
-            "MKTVAL": "Market value (CO2/NG)"
-        },
-
-        # Trade Value Fields
-        "TRDVAL_FIELDS": {
-            "TRD_VAL_BL": "Base load trade value",
-            "TRD_VAL_PK": "Peak load trade value",
-            "TRD_VAL_OFPK": "Off-peak trade value",
-            "TRDVAL": "Trade value (CO2/NG)"
-        },
-
-        # CO2-specific note (can be expanded)
-        "CO2_NOTES": {
-            "TRDPRC": "Trade price per tonne CO2",
-            "VOLUME": "Total emission volume in tonnes"
-        },
-
-        # Common interpretation
-        "COMMON": {
-            "REPORT_DATE": "Report generation date (As-of)",
-            "START_DATE": "Start of trade delivery period",
-            "END_DATE": "End of trade delivery period"
-        },
-
-        # Updated contextual labels
-        "LABEL_OVERRIDES": {
-            "BOOK_ATTR8": "Business Classification",
-            "USR_VAL4": "Route to Market",
-            "VOLUME_BL": "Volume Baseload",
-            "MKT_VAL_BL": "Market Value Baseload",
-            "TGROUP1": "Primary Strategy"
-        }
-    }
+    return business_dict, excel_file_name  # Return both the business dictionary and the file name

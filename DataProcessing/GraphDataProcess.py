@@ -191,7 +191,6 @@ def process_and_save_byfile(conn, file):
         with conn:
             cursor = conn.cursor()
 
-            # Check if file already processed
             cursor.execute(
                 "SELECT 1 FROM graph_file_metadata WHERE file_name = ? AND is_processed = 1",
                 (file_name,)

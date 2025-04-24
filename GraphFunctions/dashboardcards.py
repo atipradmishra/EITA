@@ -4,8 +4,7 @@ import openai
 from collections import defaultdict
 from datetime import datetime
 from openai import OpenAI
-from business_context import load_business_context
-from datetime import date
+from DbUtils.DbOperations import load_business_context
 
 
 def show_nop_cards(processed_data):
@@ -116,7 +115,7 @@ def get_or_generate_summary(summary_input, client ,conn):
 
     c = conn.cursor()
 
-    today = date.today().isoformat()
+    today = datetime.today().strftime('%Y-%m-%d')
 
     c.execute("SELECT summary FROM daily_ai_summary WHERE date = ?", (today,))
     result = c.fetchone()
@@ -131,20 +130,50 @@ def get_or_generate_summary(summary_input, client ,conn):
     conn.close()
     return summary
 
-def generate_segment_summary_from_bl_data(summary,client):
+def generate_segment_summary_from_bl_data(summary, client):
+    def get_delta_dict(view_1, view_2, dimension):
+        delta_list = []
+        for group in view_1:
+            for horizon in view_1[group]:
+                v1 = view_1[group][horizon].get("total_volume_bl", 0)
+                m1 = view_1[group][horizon].get("total_market_value_bl", 0)
+                v2 = view_2.get(group, {}).get(horizon, {}).get("total_volume_bl", 0)
+                m2 = view_2.get(group, {}).get(horizon, {}).get("total_market_value_bl", 0)
+                delta_v = v1 - v2
+                delta_m = m1 - m2
+                if delta_v != 0 or delta_m != 0:
+                    delta_list.append({
+                        dimension: group,
+                        "Horizon": horizon,
+                        "ΔVolume_BL": round(delta_v, 2),
+                        "ΔMarket_Value_BL": round(delta_m, 2)
+                    })
+        return sorted(delta_list, key=lambda x: abs(x["ΔMarket_Value_BL"]), reverse=True)[:3]  # Top 3
 
     sorted_dates = sorted(summary.keys(), key=lambda d: datetime.strptime(d, "%Y-%m-%d"), reverse=True)
-    
-    latest_two = sorted_dates[:2]
+    if len(sorted_dates) < 2:
+        return "Not enough data to compare two reporting dates."
 
-    filtered_summary = {
-        date: {
-            'by_segment_and_horizon': summary[date]['by_segment_and_horizon'],
-            'by_book_and_horizon': summary[date]['by_book_and_horizon']
-            }
-            for date in latest_two
-    }
+    d1, d2 = sorted_dates[:2]
+    data1 = summary[d1]
+    data2 = summary[d2]
 
+    seg_changes = get_delta_dict(data1["by_segment_and_horizon"], data2["by_segment_and_horizon"], "Segment")
+    book_changes = get_delta_dict(data1["by_book_and_horizon"], data2["by_book_and_horizon"], "Book")
+    tgroup1_changes = get_delta_dict(data1["by_tgroup1_and_horizon"], data2["by_tgroup1_and_horizon"], "Tgroup1")
+
+    # Format into tabular text
+    def format_changes(changes, label):
+        header = f"{label} | Horizon | ΔVolume_BL | ΔMkt_Val_BL"
+        divider = "-" * len(header)
+        rows = "\n".join(
+            f"{c.get(label, '')} | {c['Horizon']} | {c['ΔVolume_BL']} | {c['ΔMarket_Value_BL']}" for c in changes
+        )
+        return f"{header}\n{divider}\n{rows}"
+
+    segment_table = format_changes(seg_changes, "Segment")
+    book_table = format_changes(book_changes, "Book")
+    tgroup1_table = format_changes(tgroup1_changes, "Tgroup1")
 
     business_dict = load_business_context()
 
@@ -155,31 +184,40 @@ def generate_segment_summary_from_bl_data(summary,client):
     )
 
     prompt = f"""
-    You are a financial data analyst specializing in commodity trading. Below is structured performance data for the latest two reporting days, grouped by date.
+    You are a financial data analyst specializing in commodity trading. Below is structured delta performance data for the latest two reporting days.
 
     Your task is to:
-    1. Analyze changes in 'base load' volume (VOLUME_BL) and market value (MKT_VAL_BL) between the two report days.
-    2. Highlight the top 3 contributing drivers of change, grouped by key business dimensions such as Book, Segment, or Horizon.
+    1. Analyze changes in baseload volume (VOLUME_BL) and market value (MKT_VAL_BL) between the two report days.
+    2. Highlight the top contributing drivers of change, grouped by key business dimensions such as Book, Tgroup1, Segment, or Horizon.
     3. Identify any unusual or unexpected movements worth flagging for management attention.
+    4. Always use euro (€) for market value and volume baseload in Megawatt (MW)
+    5. Please include values of change in the response
 
-    Use this business glossary to translate technical terms into clear business language:
+    Strictly use this business glossary to translate technical terms into clear business language:
     {business_context_text}
 
-    Data:
-    {filtered_summary}
+    Below are changes in Baseload metrics between the two most recent reporting days:
+
+    🔹 Top Movers by Segment:
+    {segment_table}
+
+    🔸 Top Movers by Book:
+    {book_table}
+
+    🔸 Top Movers by Tgroup1:
+    {tgroup1_table}
 
     Please return a concise, executive-level summary (max 50 words) describing:
     - Key trends in Baseload for volume and market value
-    - Which Book, Segment, or Horizon had the largest impact on changes and show the corresponding values
+    - Which Book, Tgroup1, Segment, or Horizon had the largest impact on changes and show the corresponding values
     - Any anomalies or sharp deviations
 
     The summary should be suitable for a business dashboard and easily digestible by senior leadership.
     """
 
-
     try:
         response = client.chat.completions.create(
-            model="gpt-4-0125-preview",
+            model="gpt-4",
             temperature=0.7,
             messages=[
                 {"role": "system", "content": "You are a senior energy analyst."},

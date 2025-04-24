@@ -64,19 +64,7 @@ def update_feedback_log(feedback, comment, log_id):
     conn.commit()
     conn.close()
 
-def add_agent_detail(name, model, temperature, prompt):
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    cursor.execute('''
-        INSERT INTO agent_detail (name, model, temperature, prompt)
-        VALUES (?, ?, ?, ?)
-    ''', (name, model, temperature, prompt))
-    conn.commit()
-    conn.close()
-    st.success("✅ Settings Saved!!")
-
 def load_feedback_data():
-    """Loads existing feedback logs from the SQLite database."""
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM feedback_logs")
@@ -100,4 +88,36 @@ def load_data_for_dashboard():
     conn.close()
     return data
 
+def load_business_context():
+    """
+    Load business context from the database and return a dictionary of key-value pairs (context_name -> description).
+    """
+    context = {}
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        cursor = conn.cursor()
 
+        # Check if the table exists
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='Business_Context';")
+        table_exists = cursor.fetchone()
+
+        if not table_exists:
+            print("❌ Table 'Business_Context' does not exist.")
+            return context
+
+        # Fetch context_name and description
+        cursor.execute("SELECT context_name, description FROM Business_Context")
+        rows = cursor.fetchall()
+        conn.close()
+
+        # Process rows if they exist
+        if rows:
+            for context_name, description in rows:
+                context[context_name] = description
+        else:
+            print("❌ No data found in the Business_Context table.")
+
+    except Exception as e:
+        print(f"❌ Error loading business context: {e}")
+
+    return context
