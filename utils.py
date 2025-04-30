@@ -183,18 +183,35 @@ def query_sqlite_json_with_openai(user_question, category=None):
 
     📘 BUSINESS GLOSSARY (Terms & Labels):
     This glossary helps you interpret technical terms into business language when answering user questions.
-    {business_context_text}
+    Treat 'Net open position' questions as the sum of VOLUME_BL for the REPORT_DATE unless the context clearly refers to monetary value, in which case use MKT_VAL_BL + {business_context_text}
 
-    🗂️ PREPROCESSED DATA (Official Trading Statistics):
-    This section contains structured trading data for multiple files {category_context}.
-    {all_context}
+    🗂 PREPROCESSED DATA (Official Trading Statistics):
+    This section contains structured trading data {category_context}.
+    {all_context} 
 
-    ⚠️ INSTRUCTION (STRICTLY FOLLOW THESE STEPS — DO NOT IGNORE):
-    1. If the VERIFIED FEEDBACK section directly answers the question, use it as the ONLY source.
-    2. If the feedback is not sufficient, use PREPROCESSED DATA and BUSINESS GLOSSARY to answer.
-    3. Always translate technical codes (e.g., ELCE, NG, TGROUP1) into business-friendly terms using the glossary.
-    4. Provide a clear, professional, and concise answer suitable for business users.
-    5. End your answer with 2–3 relevant follow-up questions based on the question and data.
+    ⚠ INSTRUCTION (STRICTLY FOLLOW THESE STEPS — DO NOT IGNORE):
+    You are an expert Natural Language Query Parser specialized in Energy Trading and Risk Management (ETRM) queries.
+    CORE RESPONSIBILITIES:
+    1. Query Understanding
+    ● Extract key components from natural language queries
+    ● Identify temporal references and constraints
+    ● Recognize trading-specific terminology
+    ● Detect multiple intents within single queries
+    2. Parameter Extraction
+    ● Identify and normalize:
+    ○ Time periods and dates
+    ○ Commodities and markets
+    ○ Traders and counterparties
+    ○ Metrics and measurements
+    ○ Comparison requests
+    ○ Aggregation levels
+    3. Query Intent Recognition Primary intents include:
+    ● Position analysis
+    ● Market exposure evaluation
+    ● Risk assessment
+    ● Performance measurement
+    ● Compliance checking
+    ● Strategic analysis
 
     DO NOT DEVIATE FROM THESE STEPS. ANSWERS MUST FOLLOW THIS EXACT LOGIC.
     {prompt_Instr}
