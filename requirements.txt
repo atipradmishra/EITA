@@ -13,3 +13,4 @@ faiss-cpu
 plotly
 scikit-learn
 openpyxl
+streamlit_extras
