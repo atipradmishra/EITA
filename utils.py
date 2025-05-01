@@ -11,6 +11,14 @@ import datetime
 from sklearn.feature_extraction.text import TfidfVectorizer
 from DbUtils.DbOperations import load_feedback_data, load_business_context
 from config import aws_access_key, aws_secret_key, client, DB_NAME, VALID_BUCKET, REJECTED_BUCKET
+import tiktoken
+
+# Initialize conversation history in session state
+if "conversation_history" not in st.session_state:
+    st.session_state.conversation_history = []
+
+# Assume you are using GPT-4
+enc = tiktoken.encoding_for_model("gpt-4")
 
 def upload_to_s3(file, filename, bucket):
     try:
@@ -97,153 +105,206 @@ def validate_against_metadata(file_df: pd.DataFrame, metadata_df: pd.DataFrame, 
         st.error("❌ Validation Failed.")
         return False
 
+
 def query_sqlite_json_with_openai(user_question, category=None):
-    # Load business dictionary
+    from DbUtils.sqlquery import run_orchestrated_agent
+    # Step 0: Load your business glossary
     business_dict = load_business_context()
 
-    # Step 1: Load Feedback and FAISS Index
+    # Step 1: Feedback / FAISS
     feedback_data = load_feedback_data()
     faiss_index, feedback_data_indexed = create_faiss_index(feedback_data)
-    feedback_insights = retrieve_feedback_insights(user_question, faiss_index, feedback_data_indexed)
-
-    # Step 2: Query SQLite data
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-
-    if category:
-        if category == "CO2":
-            cursor.execute("SELECT file_name, json_contents FROM file_tracking WHERE is_processed = 1 AND file_name LIKE 'NOP_CO2%'")
-        elif category == "Natural Gas":
-            cursor.execute("SELECT file_name, json_contents FROM file_tracking WHERE is_processed = 1 AND (file_name LIKE 'NOP_GAS%' OR file_name LIKE 'NOP_NG%')")
-        elif category == "Power":
-            cursor.execute("SELECT file_name, json_contents FROM file_tracking WHERE is_processed = 1 AND (file_name LIKE 'NOP_POWER%' OR file_name LIKE 'NOP_PW%')")
-    else:
-        cursor.execute("SELECT file_name, json_contents FROM file_tracking WHERE is_processed = 1")
-
-    rows = cursor.fetchall()
-    conn.close()
-
-    if not rows:
-        return "⚠️ No processed JSON data found for the selected category."
-    
-    #Prompt Instruction
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-
-    if category:
-        if category == "CO2":
-            cursor.execute("SELECT prompt FROM agent_detail WHERE name= 'CO2 AGENT'")
-        elif category == "Natural Gas":
-            cursor.execute("SELECT prompt FROM agent_detail WHERE name= 'NG AGENT'")
-        elif category == "Power":
-            cursor.execute("SELECT prompt FROM agent_detail WHERE name= 'PW AGENT'")
-    else:
-        cursor.execute("SELECT prompt FROM agent_detail WHERE name= 'PW AGENT'")
-
-    prompt_Instr = cursor.fetchall()
-    print(f"Prompt Instruction, {prompt_Instr}")
-
-    conn.close()
-
-    if not prompt_Instr:
-        return "⚠️ No Prompt Instruction Found."
-    
-    # Step 3: Build context from retrieved JSON
-    all_context = ""
-    file_names = []
-    for file_name, json_text in rows:
-        file_names.append(file_name)
-        try:
-            json_data = json.loads(json_text)
-            summary = json.dumps(json_data, separators=(',', ':'))[:6000]
-            all_context += f"\n---\n📄 File: {file_name}\n{summary}"
-        except Exception as e:
-            all_context += f"\n---\n📄 File: {file_name}\n⚠️ Error reading JSON: {e}"
-
-    # Step 4: Prepare business glossary
-    business_context_text = "\n".join(
-        f"{key}: {value}" if isinstance(value, str)
-        else f"{key}: {', '.join(f'{k} = {v}' for k, v in value.items())}"
-        for key, value in business_dict.items()
+    feedback_insights = retrieve_feedback_insights(
+        user_question, faiss_index, feedback_data_indexed
     )
 
-    # Step 5: Compose system prompt
+    # Step 2: Orchestrated SQL (single or multi-query)
+    result, is_multi = run_orchestrated_agent(user_question, category, conversation_history=st.session_state.conversation_history)
+
+    # Build all_context from the orchestrator's output
+    if is_multi:
+        # already a narrative summary
+        all_context = result["synthesis"]
+    else:
+        # Handle potential error cases or missing keys in the result
+        if "error" in result:
+            all_context = f"Error in SQL query: {result['error']}"
+        elif "columns" not in result or "rows" not in result:
+            all_context = "Error: SQL query returned an unexpected structure"
+        else:
+            # simple table: columns + rows
+            cols = result["columns"]
+            rows = result["rows"]
+            header = " | ".join(cols)
+            body = "\n".join(" | ".join(map(str, row)) for row in rows)
+            all_context = f"{header}\n{body}"
+
+    # Check the token count of all_context
+    all_context_token_count = len(enc.encode(all_context))
+    if all_context_token_count > 7090:
+        # Return a message to the user if the context is too large
+        return "⚠️ Your question returned more data than we can process effectively. Please consider narrowing your date range, applying more filters, or including aggregation terms such as sum, total, or average for more precise results"
+
+    # We no longer extract file_names from JSON, so keep empty
+    file_names = []
+
+    # Step 3: Pull Prompt Instruction for this category
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    if category == "CO2":
+        cursor.execute("SELECT prompt FROM agent_detail WHERE name = 'CO2 AGENT'")
+    elif category == "Natural Gas":
+        cursor.execute("SELECT prompt FROM agent_detail WHERE name = 'NG AGENT'")
+    elif category == "Power":
+        cursor.execute("SELECT prompt FROM agent_detail WHERE name = 'PW AGENT'")
+    else:
+        cursor.execute("SELECT prompt FROM agent_detail WHERE name = 'PW AGENT'")
+    row = cursor.fetchone()
+    conn.close()
+
+    if not row:
+        return "⚠️ No Prompt Instruction Found."
+    prompt_Instr = row[0]
+
+    # Step 4: Format business glossary
+    business_context_text = "\n".join(
+        f"{k}: {v}" if isinstance(v, str)
+        else f"{k}: {', '.join(f'{x} = {y}' for x,y in v.items())}"
+        for k, v in business_dict.items()
+    )
+
+    # Step 5: Build feedback block
     feedback_text = ""
-    
     if feedback_insights:
-        feedback_text = "\n\nBased on feedback from similar queries, please be aware of these issues:\n"
-        feedback_text += "\n".join(f"- {insight}" for insight in feedback_insights)
-        print(feedback_text)
-    category_context = f"for the {category} category" if category and category != "All" else ""
+        feedback_text = (
+            "\n\nBased on feedback from similar queries, please be aware of these issues:\n"
+            + "\n".join(f"- {insight}" for insight in feedback_insights)
+        )
 
+    # Step 6: Category context phrase
+    category_context = (
+        f"for the {category} category"
+        if category and category != "All"
+        else ""
+    )
+
+    # Step 7: Compose the system prompt for the main answer
     context_message = f"""
-    📌 VERIFIED FEEDBACK (Authoritative Corrections):
-    Use this section as the most accurate reference if it directly answers the question.
-    {feedback_text}
+📌 VERIFIED FEEDBACK (Authoritative Corrections):
+Use this section as the most accurate reference if it directly answers the question.
+{feedback_text}
 
-    📘 BUSINESS GLOSSARY (Terms & Labels):
-    This glossary helps you interpret technical terms into business language when answering user questions.
-    Treat 'Net open position' questions as the sum of VOLUME_BL for the REPORT_DATE unless the context clearly refers to monetary value, in which case use MKT_VAL_BL + {business_context_text}
+📘 BUSINESS GLOSSARY (Terms & Labels):
+This glossary helps you interpret technical terms into business language when answering user questions.
+reat 'Net open position' questions as the sum of VOLUME_BL for the REPORT_DATE unless the context clearly refers to monetary value, in which case use MKT_VAL_BL + {business_context_text}
 
-    🗂 PREPROCESSED DATA (Official Trading Statistics):
-    This section contains structured trading data {category_context}.
-    {all_context} 
+🗂️ PREPROCESSED DATA (Official Trading Statistics):
+This section contains structured trading data {category_context}.
+{all_context} 
 
-    ⚠ INSTRUCTION (STRICTLY FOLLOW THESE STEPS — DO NOT IGNORE):
-    You are an expert Natural Language Query Parser specialized in Energy Trading and Risk Management (ETRM) queries.
-    CORE RESPONSIBILITIES:
-    1. Query Understanding
-    ● Extract key components from natural language queries
-    ● Identify temporal references and constraints
-    ● Recognize trading-specific terminology
-    ● Detect multiple intents within single queries
-    2. Parameter Extraction
-    ● Identify and normalize:
-    ○ Time periods and dates
-    ○ Commodities and markets
-    ○ Traders and counterparties
-    ○ Metrics and measurements
-    ○ Comparison requests
-    ○ Aggregation levels
-    3. Query Intent Recognition Primary intents include:
-    ● Position analysis
-    ● Market exposure evaluation
-    ● Risk assessment
-    ● Performance measurement
-    ● Compliance checking
-    ● Strategic analysis
+⚠️ INSTRUCTION (STRICTLY FOLLOW THESE STEPS — DO NOT IGNORE):
+You are an expert Energy Trading and Risk Management (ETRM) analyst. Answer the user's question precisely using only the data provided above. Provide clear, concise explanations with specific numbers when available.
 
-    DO NOT DEVIATE FROM THESE STEPS. ANSWERS MUST FOLLOW THIS EXACT LOGIC.
-    {prompt_Instr}
-    """
-    
-    # Step 6: Construct the conversation and call OpenAI
+{prompt_Instr}
+"""
+
+    # Token count for full context
+    token_count = len(enc.encode(context_message))
+    st.write("🧮 Token count:", token_count)
+    # Also display the all_context token count separately
+    st.write("🧮 Data context token count:", all_context_token_count)
+
+    # Step 8: Send through your session‐based conversation to get the main answer
     st.session_state.conversation.append({"role": "system", "content": context_message})
     st.session_state.conversation.append({"role": "user", "content": user_question})
 
-    for idx, message in enumerate(st.session_state.conversation):
-        print(f"\n🔹 Message {idx+1} ({message['role']}):\n{message['content']}\n{'-'*60}")
-
     response = client.chat.completions.create(
-        model="gpt-4-0125-preview",
+        model="gpt-4",
         messages=st.session_state.conversation,
-        temperature=0.7
+        temperature=0.7,
     )
-
     gpt_answer = response.choices[0].message.content.strip()
     st.session_state.conversation.append({"role": "assistant", "content": gpt_answer})
 
-    if len(st.session_state.conversation) > 6:
-        st.session_state.conversation = [st.session_state.conversation[0]] + st.session_state.conversation[-4:]
+    # Step 9: Generate recommended follow-up questions in a separate call
+    recommendation_prompt = f"""
+📌 VERIFIED FEEDBACK (Authoritative Corrections):
+Use this section as the most accurate reference if it directly answers the question.
+{feedback_text}
 
+📘 BUSINESS GLOSSARY (Terms & Labels):
+This glossary helps you interpret technical terms into business language when answering user questions.
+reat 'Net open position' questions as the sum of VOLUME_BL for the REPORT_DATE unless the context clearly refers to monetary value, in which case use MKT_VAL_BL + {business_context_text}
+
+🗂️ PREPROCESSED DATA (Official Trading Statistics):
+This section contains structured trading data {category_context}.
+{all_context} 
+
+⚠️ INSTRUCTION (STRICTLY FOLLOW THESE STEPS — DO NOT IGNORE):
+You are an expert Natural Language Query Parser specialized in Energy Trading and Risk Management (ETRM) queries.
+CORE RESPONSIBILITIES:
+1. Query Understanding
+● Extract key components from natural language queries
+● Identify temporal references and constraints
+● Recognize trading-specific terminology
+● Detect multiple intents within single queries
+2. Parameter Extraction
+● Identify and normalize:
+○ Time periods and dates
+○ Commodities and markets
+○ Traders and counterparties
+○ Metrics and measurements
+○ Comparison requests
+○ Aggregation levels
+3. Query Intent Recognition Primary intents include:
+● Position analysis
+● Market exposure evaluation
+● Risk assessment
+● Performance measurement
+● Compliance checking
+● Strategic analysis
+
+Based on the user's previous question: "{user_question}" and the answer that was provided, generate exactly 3 related follow-up questions that would be helpful and relevant. Format them as a numbered list (1, 2, 3).
+
+DO NOT DEVIATE FROM THESE STEPS. ANSWERS MUST FOLLOW THIS EXACT LOGIC.
+
+{prompt_Instr}
+"""
+
+    recommendation_messages = [
+        {"role": "system", "content": recommendation_prompt},
+        {"role": "user", "content": f"Previous question: {user_question}\nPrevious answer: {gpt_answer}\n\nSuggest 3 related follow-up questions try to give simple questions."}
+    ]
+
+    recommendation_response = client.chat.completions.create(
+        model="gpt-4",
+        messages=recommendation_messages,
+        temperature=0.7,
+    )
+    recommended_questions = recommendation_response.choices[0].message.content.strip()
+
+    # Keep history to last 5 messages
+    if len(st.session_state.conversation) > 6:
+        st.session_state.conversation = (
+            [st.session_state.conversation[0]]
+            + st.session_state.conversation[-4:]
+        )
+
+    # Step 10: Compute confidence and write output
     confidence_score = calculate_confidence_score(0.7, feedback_insights, file_names)
     st.session_state.confidence_score = confidence_score
 
     with open("query_output.txt", "w", encoding="utf-8") as f:
         f.write("🔹 Extracted Data:\n" + all_context)
         f.write("\n\n🔹 GPT Answer:\n" + gpt_answer)
+        f.write("\n\n🔹 Recommended Questions:\n" + recommended_questions)
 
-    return gpt_answer
+    # Store the recommended questions for display in the UI
+    st.session_state.recommended_questions = recommended_questions
+    
+    # Return the main answer (the UI will display the recommendations separately)
+    return gpt_answer + "\n\n" + "You might also want to ask:\n" + recommended_questions
+
 
 def create_faiss_index(feedback_data):
     if not feedback_data:

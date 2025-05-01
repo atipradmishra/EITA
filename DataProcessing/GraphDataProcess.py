@@ -184,7 +184,7 @@ def save_jsondata_to_db(json_data,conn):
     )
     conn.commit()
 
-def process_and_save_byfile(conn, file):
+def process_and_save_byfile(conn, file, folder):
     try:
         file_name = file.name
 
@@ -206,19 +206,30 @@ def process_and_save_byfile(conn, file):
                 print(f"🔄 Processing: {file_name}")
 
                 df.replace(",", "", regex=True, inplace=True)
-                df['MKT_VAL_BL'] = df['MKT_VAL_BL'].astype(str).str.replace(',', '').astype(float)
-                df[['VOLUME_BL', 'MKT_VAL_BL']] = df[['VOLUME_BL', 'MKT_VAL_BL']].apply(pd.to_numeric, errors='coerce')
 
-                df['source_file'] = file_name
+                # df['source_file'] = file_name
 
-                desired_columns = [
-                    'REPORT_DATE', 'SEGMENT', 'TGROUP1', 'BUCKET', 'HORIZON',
-                    'VOLUME_BL', 'MKT_VAL_BL', 'source_file', 'BOOK_ATTR8',
-                    'USR_VAL4', 'BOOK', 'VOLUME_PK', 'VOLUME_OFPK',
-                    'MKT_VAL_PK', 'MKT_VAL_OFPK', 'TRD_VAL_BL',
-                    'TRD_VAL_PK', 'TRD_VAL_OFPK'
-                ]
-                save_rawdata_to_db(df[desired_columns], conn, file_name)
+                # desired_columns = [
+                #     'REPORT_DATE', 'SEGMENT', 'TGROUP1', 'BUCKET', 'HORIZON',
+                #     'VOLUME_BL', 'MKT_VAL_BL', 'source_file', 'BOOK_ATTR8',
+                #     'USR_VAL4', 'BOOK', 'VOLUME_PK', 'VOLUME_OFPK',
+                #     'MKT_VAL_PK', 'MKT_VAL_OFPK', 'TRD_VAL_BL',
+                #     'TRD_VAL_PK', 'TRD_VAL_OFPK'
+                # ]
+                if folder == 'CO2':
+                    df.to_sql('CO2_raw_data', conn, if_exists='append', index=False)
+                elif folder == 'NG':
+                    df.to_sql('NG_raw_data', conn, if_exists='append', index=False)
+                elif folder == 'PW':
+                    df['MKT_VAL_BL'] = df['MKT_VAL_BL'].astype(str).str.replace(',', '').astype(float)
+                    df[['VOLUME_BL', 'MKT_VAL_BL']] = df[['VOLUME_BL', 'MKT_VAL_BL']].apply(pd.to_numeric, errors='coerce')
+                    df.to_sql('PW_raw_data', conn, if_exists='append', index=False)
+                    cursor = conn.cursor()
+                    cursor.execute(
+                        "INSERT INTO graph_file_metadata (file_name, is_processed) VALUES (?, ?)",
+                        (file_name, 1)
+                    )
+                # save_rawdata_to_db(df, conn, file_name)
 
             except Exception as e:
                 print(f"❌ Error processing file {file_name}: {e}")

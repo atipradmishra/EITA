@@ -3,6 +3,7 @@ import boto3
 import io
 import sqlite3
 import json
+import numpy as np
 from config import aws_access_key, aws_secret_key, client, DB_NAME, VALID_BUCKET, REJECTED_BUCKET
 
 def process_files_from_s3_folder(bucket_name, folder_prefix):

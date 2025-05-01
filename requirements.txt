@@ -14,3 +14,5 @@ plotly
 scikit-learn
 openpyxl
 streamlit_extras
+tiktoken
+langchain

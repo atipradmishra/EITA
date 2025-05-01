@@ -215,10 +215,9 @@ else:
             if metadata_df is not None and raw_files1:
                 try:
                     for f in raw_files1:
-                        if folder == 'PW':
-                            file_name = f.name
-                            conn = sqlite3.connect(DB_NAME)
-                            process_and_save_byfile(conn, f)
+                        file_name = f.name
+                        conn = sqlite3.connect(DB_NAME)
+                        process_and_save_byfile(conn, f,folder)
                         try:
                             f.seek(0)
                             df = pd.read_csv(f)
@@ -417,36 +416,36 @@ else:
     elif st.session_state.sub_section == "RAG Dashboard":
         rag_agents_dashboard()
     
-    elif st.session_state.sub_section == "Manage RAG Agents":
-        manage_rag_agents()
-    
     # elif st.session_state.sub_section == "Manage RAG Agents":
-    #     prefix_fields = {
-    #         "CO2": ['VOLUME', 'TRDVAL', 'MKTVAL', 'TRDPRC'],
-    #         "Natural Gas": ['VOLUME', 'VOLUME_TOTAL', 'QTY_PHY', 'MKT_VAL', 'QTY_FIN', 'TRD_VAL'],
-    #         "Power": ['VOLUME_BL', 'VOLUME_PK', 'VOLUME_OFPK', 'MKT_VAL_BL', 'MKT_VAL_PK', 'MKT_VAL_OFPK', 'TRD_VAL_BL', 'TRD_VAL_PK', 'TRD_VAL_OFPK']
-    #     }
-    #     name = st.text_input("RAG  Agent Name")
-    #     col1, col2 = st.columns(2)
-    #     with col1:
-    #         bucket = st.selectbox("Select Bucket Name(S3)", ["etrm-etai-poc-chub","etrm-etai-poc", "etrm-etai-poc-ng"])
-    #     with col2:
-    #         prefix = st.selectbox("Select Prefix", list(prefix_fields.keys()), index=0)
-    #     col3, col4 = st.columns(2)
-    #     with col3:
-    #         model = st.selectbox("Model", ["OpenAI GPT-3.5", "OpenAI GPT-4", "Llama 2", "Claude 3.5", "Claude 4", "Custom Model"])
-    #     with col4:
-    #         temp = st.slider("Temperature (Creativity)", 0.0, 1.0, 0.7, 0.1)
-    #     col5, col6 = st.columns(2)
-    #     with col5:
-    #         metadata_file = st.file_uploader("Upload Data Dictionary (CSV)", type=["csv"])
-    #     with col6:
-    #         uploaded_file = st.file_uploader("Upload Transaction Log (TXT, PDF, CSV, DOCX)", type=["txt", "pdf", "csv", "docx"])
-    #     prompt = st.text_area("📝 Provide Prompt Instructions", key='prompt')
-    #     if st.button("Submit & Process Data"):
-    #         prefix_value = {"CO2": "CO2", "Natural Gas": "NG", "Power": "PW"}.get(prefix, "misc")
-    #         process_files_from_s3_folder(VALID_BUCKET, prefix_value)
-    #         add_agent_detail(name, model, temp, prompt)
+    #     # manage_rag_agents()
+    
+    elif st.session_state.sub_section == "Manage RAG Agents":
+        prefix_fields = {
+            "CO2": ['VOLUME', 'TRDVAL', 'MKTVAL', 'TRDPRC'],
+            "Natural Gas": ['VOLUME', 'VOLUME_TOTAL', 'QTY_PHY', 'MKT_VAL', 'QTY_FIN', 'TRD_VAL'],
+            "Power": ['VOLUME_BL', 'VOLUME_PK', 'VOLUME_OFPK', 'MKT_VAL_BL', 'MKT_VAL_PK', 'MKT_VAL_OFPK', 'TRD_VAL_BL', 'TRD_VAL_PK', 'TRD_VAL_OFPK']
+        }
+        name = st.text_input("RAG  Agent Name")
+        col1, col2 = st.columns(2)
+        with col1:
+            bucket = st.selectbox("Select Bucket Name(S3)", ["etrm-etai-poc-chub","etrm-etai-poc", "etrm-etai-poc-ng"])
+        with col2:
+            prefix = st.selectbox("Select Prefix", list(prefix_fields.keys()), index=0)
+        col3, col4 = st.columns(2)
+        with col3:
+            model = st.selectbox("Model", ["OpenAI GPT-3.5", "OpenAI GPT-4", "Llama 2", "Claude 3.5", "Claude 4", "Custom Model"])
+        with col4:
+            temp = st.slider("Temperature (Creativity)", 0.0, 1.0, 0.7, 0.1)
+        col5, col6 = st.columns(2)
+        with col5:
+            metadata_file = st.file_uploader("Upload Data Dictionary (CSV)", type=["csv"])
+        with col6:
+            uploaded_file = st.file_uploader("Upload Transaction Log (TXT, PDF, CSV, DOCX)", type=["txt", "pdf", "csv", "docx"])
+        prompt = st.text_area("📝 Provide Prompt Instructions", key='prompt')
+        if st.button("Submit & Process Data"):
+            prefix_value = {"CO2": "CO2", "Natural Gas": "NG", "Power": "PW"}.get(prefix, "misc")
+            process_files_from_s3_folder(VALID_BUCKET, prefix_value)
+            # add_agent_detail(name, model, temp, prompt)
 
     elif st.session_state.sub_section == "Fine Tuning":
         st.subheader("📄 Fine Tuning")

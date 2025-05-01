@@ -41,7 +41,7 @@ def create_db():
         CREATE TABLE IF NOT EXISTS file_tracking (
             upload_id INTEGER PRIMARY KEY AUTOINCREMENT,
             file_name TEXT,
-            date_processed TEXT,
+            date_processed TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             json_contents TEXT,
             is_processed INTEGER
         )
