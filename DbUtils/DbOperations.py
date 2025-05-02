@@ -121,3 +121,38 @@ def load_business_context():
         print(f"❌ Error loading business context: {e}")
 
     return context
+
+def fetch_latest_reports():
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+
+    cursor.execute(f"""
+        SELECT report_date, json_data
+        FROM daily_graph_data
+        ORDER BY report_date DESC
+        LIMIT 2
+    """)
+    rows = cursor.fetchall()
+    conn.close()
+
+    report_dicts = []
+    for report_date, json_blob in rows:
+        data = json.loads(json_blob)
+        data["report_date"] = report_date
+        report_dicts.append(data)
+
+    # Sort chronologically (oldest to newest)
+    return sorted(report_dicts, key=lambda x: x["report_date"])
+
+def save_grouped_data_to_db(grouped_output, category):
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    for report_date, data in grouped_output.items():
+        json_blob = json.dumps(data)
+        cursor.execute('''
+            INSERT OR REPLACE INTO daily_graph_data (report_date, json_data, category)
+            VALUES (?, ?,?)
+        ''', (report_date, json_blob, category))
+
+    conn.commit()
+    conn.close()

@@ -108,6 +108,14 @@ def validate_against_metadata(file_df: pd.DataFrame, metadata_df: pd.DataFrame, 
 
 def query_sqlite_json_with_openai(user_question, category=None):
     from DbUtils.sqlquery import run_orchestrated_agent
+
+        # Ensure conversation_history exists in session state
+    if not hasattr(st.session_state, 'conversation_history'):
+        st.session_state.conversation_history = []
+    
+    if not hasattr(st.session_state, 'conversation'):
+        st.session_state.conversation = [{"role": "system", "content": "You are a helpful assistant."}]
+        
     # Step 0: Load your business glossary
     business_dict = load_business_context()
 
@@ -143,7 +151,7 @@ def query_sqlite_json_with_openai(user_question, category=None):
     all_context_token_count = len(enc.encode(all_context))
     if all_context_token_count > 7090:
         # Return a message to the user if the context is too large
-        return "⚠️ Your question returned more data than we can process effectively. Please consider narrowing your date range, applying more filters, or including aggregation terms such as sum, total, or average for more precise results"
+        return "We've encountered a data volume limitation while processing your question. The information returned exceeds our current processing capacity (Token Limit). To receive a complete and accurate response, please refine your question with more specific parameters, such as:\n* Narrowing the date range\n* Adding more precise filters\n* Including aggregation terms (sum, average, total)\n* Focusing on specific metrics or dimensions"
 
     # We no longer extract file_names from JSON, so keep empty
     file_names = []
@@ -238,7 +246,16 @@ reat 'Net open position' questions as the sum of VOLUME_BL for the REPORT_DATE u
 
 🗂️ PREPROCESSED DATA (Official Trading Statistics):
 This section contains structured trading data {category_context}.
-{all_context} 
+This Data is CRITICAL: {all_context}
+
+⚠️ IMPORTANT CONTEXT PRESERVATION:
+When processing the data results, ALWAYS assume that any filtering conditions mentioned in the original user question (like specific books, traders, commodities, etc.) apply to ALL the data shown in the results, even if column names don't explicitly include these filters.
+
+Original Question Context: "{user_question}"
+- If the original question filtered by a specific book (e.g., GTUO), assume ALL data in the results is for that book
+- If the original question filtered by commodity, trader, or other dimension, assume ALL data reflects those filters
+- The SQL query engine has already applied these filters, so the data shown is the correct filtered subset
+
 
 ⚠️ INSTRUCTION (STRICTLY FOLLOW THESE STEPS — DO NOT IGNORE):
 You are an expert Natural Language Query Parser specialized in Energy Trading and Risk Management (ETRM) queries.
@@ -302,8 +319,11 @@ DO NOT DEVIATE FROM THESE STEPS. ANSWERS MUST FOLLOW THIS EXACT LOGIC.
     # Store the recommended questions for display in the UI
     st.session_state.recommended_questions = recommended_questions
     
+    # NEW: Log the conversation to a separate log file
+    full_response = gpt_answer + "\n\n" + "You might also want to ask:\n" + recommended_questions
+    
     # Return the main answer (the UI will display the recommendations separately)
-    return gpt_answer + "\n\n" + "You might also want to ask:\n" + recommended_questions
+    return full_response
 
 
 def create_faiss_index(feedback_data):

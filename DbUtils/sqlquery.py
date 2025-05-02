@@ -314,7 +314,15 @@ def generate_sql_tool(
     ) + f"""Only output raw, runnable SQLite SQL using {table_name} as the table name.
     
     IMPORTANT INSTRUCTION: Treat 'Net open position' questions as the sum of VOLUME_BL for the REPORT_DATE 
-    unless the context clearly refers to monetary value, in which case use MKT_VAL_BL."""
+    unless the context clearly refers to monetary value, in which case use MKT_VAL_BL.
+
+    CRITICAL: You MUST prefix ALL column aliases in SELECT statements with filter contexts from WHERE clauses.
+    For example, if filtering by BOOK = 'GTUO', prefix column aliases with 'GTUO_'.
+
+    IMPORTANT: When the user asks for trends across consecutive Report_Dates (e.g., "5 consecutive decreases"), you MUST:
+    - First rank or number rows per BOOK ordered by Report_Date descending.
+    - Compare the values in strict order (e.g., VOLUME_BL of latest day vs previous day, etc.).
+    - Ensure you're using only the latest N Report_Dates per BOOK, not all historical data."""
 
     # 4. Build the user prompt
     user_prompt = f"""
@@ -325,6 +333,7 @@ Table name to use: {table_name}
 
 Instructions:
 - Always include 'Report_Date' as a selected column in the query results.
+- Always include ALL columns that are relevant to the user's request in the SELECT statement.
 - Use {table_name} as the table name in your queries.
 - Use **only** the JSON keys as column names (case-sensitive).
 - Ensure the Query is ordered by 'Report_Date' (ascending or descending based on context or default to descending).
@@ -334,6 +343,8 @@ Instructions:
 - Return **only** raw runnable SQL — no explanations, no markdown fences, no comments.
 - If you reference any column not listed in the JSON keys, the query will fail.
 - IMPORTANT: For 'Net open position' questions, use VOLUME_BL column for quantity-based analysis, and MKT_VAL_BL for monetary value analysis.
+- If the user requests checking for changes over the latest N consecutive Report_Date rows (e.g., decreasing trend), retrieve only the latest N+1 records per group (using ROW_NUMBER or window functions) and compare them in sequence.
+- Use CASE WHEN or aggregation to validate that the decreasing or increasing condition holds across all required rows.
 
 User request:
 {input_text}

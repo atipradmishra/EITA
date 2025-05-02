@@ -63,33 +63,14 @@ def create_db():
             created_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
     """)
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS raw_data (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            REPORT_DATE TEXT,
-            SEGMENT TEXT,
-            BOOK TEXT,
-            BOOK_ATTR6 TEXT,
-            BOOK_ATTR7 TEXT,
-            BOOK_ATTR8 TEXT,
-            USR_VAL4 TEXT,
-            TGROUP1 TEXT,
-            TGROUP2 TEXT,
-            BUCKET TEXT,
-            HORIZON TEXT,
-            METHOD TEXT,
-            VOLUME_BL REAL,
-            VOLUME_PK REAL,
-            VOLUME_OFPK REAL,
-            MKT_VAL_BL REAL,
-            MKT_VAL_PK REAL,
-            MKT_VAL_OFPK REAL,
-            TRD_VAL_BL REAL,
-            TRD_VAL_PK REAL,
-            TRD_VAL_OFPK REAL,
-            source_file TEXT
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS daily_graph_data (
+            report_date TEXT PRIMARY KEY,
+            category TEXT,
+            json_data TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
-    """)
+    ''')
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS graph_file_metadata (
             id INTEGER PRIMARY KEY AUTOINCREMENT,

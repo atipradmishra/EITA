@@ -1,52 +1,57 @@
-# heatmap_viewer.py
-import pandas as pd
 import streamlit as st
+import pandas as pd
+from datetime import datetime
 
-def plot_heatmap(heatmap_data, row_option):
+def show_delta_heatmap(data_list):
+    row_option = st.radio("Choose row grouping:", ["Bucket","Horizon", ], horizontal=True)
+    view_map = {"Horizon": "by_segment_horizon", "Bucket": "by_segment_bucket"}
+    view_key = view_map[row_option]
 
+    # Sort and ensure at least two report dates
+    sorted_data = sorted(data_list, key=lambda d: datetime.strptime(d["report_date"], "%Y-%m-%d"), reverse=True)
+    if len(sorted_data) < 2:
+        st.warning("Need at least two days of data.")
+        return
 
-    selected_dim = "bucket" if row_option == "BUCKET" else "horizon"
+    latest, previous = sorted_data[0], sorted_data[1]
+    latest_date, previous_date = latest["report_date"], previous["report_date"]
+    latest_view = latest.get(view_key, {})
+    previous_view = previous.get(view_key, {})
 
-    # Get all row values based on dimension
-    all_row_values = sorted({
-        row_key
-        for horizon_data in heatmap_data.values()
-        for row_key in horizon_data.keys()
-    }) if selected_dim == "bucket" else sorted(heatmap_data.keys())
+    all_segments = set(latest_view.keys()).union(previous_view.keys())
+    all_rows = set()
 
-    # Get all segments
-    all_segments = sorted({
-        seg
-        for horizon_data in heatmap_data.values()
-        for row_data in horizon_data.values()
-        for seg in row_data.keys()
-    })
+    # Collect all row labels (horizons or buckets)
+    for seg in all_segments:
+        all_rows.update(latest_view.get(seg, {}).keys())
+        all_rows.update(previous_view.get(seg, {}).keys())
 
-    # Build a matrix DataFrame
-    matrix = pd.DataFrame(index=all_row_values, columns=all_segments)
+    data_matrix = {}
 
-    for horizon, row_data in heatmap_data.items():
-        for row_key, seg_data in row_data.items():
-            row_label = row_key if selected_dim == "bucket" else horizon
-            for segment, info in seg_data.items():
-                val = info.get('delta', 0)
-                matrix.loc[row_label, segment] = val if pd.notna(val) else 0
+    for row_label in all_rows:
+        row_data = {}
+        for seg in all_segments:
+            v1 = latest_view.get(seg, {}).get(row_label, {}).get("market_val_bl", 0)
+            v2 = previous_view.get(seg, {}).get(row_label, {}).get("market_val_bl", 0)
+            delta = v1 - v2
+            row_data[seg] = f"{'+' if delta > 0 else ''}{round(delta, 2)}"
+        data_matrix[row_label] = row_data
 
-    matrix.fillna(0, inplace=True)
+    matrix = pd.DataFrame.from_dict(data_matrix, orient='index').fillna("0.0")
 
-    # Styling function
     def style_func(val):
-        val = str(val)
         try:
-            if "+" in val:
-                color = '#dcfce7'  # greenish
-            elif "-" in val:
-                color = '#fee2e2'  # reddish
-            else:
-                color = '#f1f5f9'  # neutral
-            return f'background-color: {color}; color: #272420; font-weight: bold'
+            if isinstance(val, str):
+                if "+" in val:
+                    color = '#dcfce7'  # green
+                elif "-" in val:
+                    color = '#fee2e2'  # red
+                else:
+                    color = '#f1f5f9'  # neutral
+                return f'background-color: {color}; color: #272420; font-weight: bold'
         except:
-            return ''
+            pass
+        return ''
 
     st.subheader(f"Segment Delta Heatmap by {row_option}")
     st.dataframe(matrix.style.map(style_func), use_container_width=True)

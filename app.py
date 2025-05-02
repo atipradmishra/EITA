@@ -10,16 +10,16 @@ import matplotlib.pyplot as plt
 import re
 from openai import OpenAI
 from config import aws_access_key, aws_secret_key, client, DB_NAME, VALID_BUCKET, REJECTED_BUCKET
-from DataProcessing.GraphDataProcess import process_and_save_from_s3, save_jsondata_to_db, process_csv_data_to_json , save_rawdata_to_db, process_and_save_byfile
-from GraphFunctions.dashboardgraphs import show_top5_movers,plot_delta_market_value_by_horizon, plot_delta_market_value_by_horizon_by_tgroup1, plot_delta_volume_by_horizon, plot_delta_volume_by_horizon_by_tgroup1, plot_delta_volume_by_horizon_by_bookattr8,plot_delta_market_value_by_horizon_by_bookattr8
-from GraphFunctions.heatmaptable import plot_heatmap
+from DataProcessing.GraphDataProcess import process_and_save_from_s3, process_csv_data_to_json , save_rawdata_to_db, process_and_save_byfile,process_and_save_from_db
+from GraphFunctions.dashboardgraphs import plot_delta_volume_from_reports, plot_delta_market_from_reports,show_top5_movers
+from GraphFunctions.heatmaptable import show_delta_heatmap
 from GraphFunctions.dashboardcards import show_nop_cards,render_summary_card
 from GraphFunctions.querygraphs import plot_combined_graph_CO2, plot_combined_graph_NG, plot_combined_graph_PW, plot_graph_based_on_prompt_all, plot_dimension_data, plot_single_date_metrics, plot_time_series
 from DbUtils.models import create_db
 from DbUtils.auth import register_user, authenticate_user, logout
 from DataProcessing.DataProcess import process_files_from_s3_folder,process_metadata_alias
 from utils import upload_to_s3,save_metadata_to_db, upload_metadatafile_to_s3, validate_against_metadata,query_sqlite_json_with_openai,create_faiss_index,prepare_training_data,save_training_data,extract_date_from_query,calculate_confidence_score,retrieve_feedback_insights
-from DbUtils.DbOperations import add_feedback_log, get_feedback_logs, update_feedback_log, get_existing_metadata, load_feedback_data, load_data_for_dashboard
+from DbUtils.DbOperations import add_feedback_log, get_feedback_logs, update_feedback_log, get_existing_metadata, load_feedback_data, load_data_for_dashboard,fetch_latest_reports
 from dashboards.file_tracking_dashboard import main as render_file_tracking_dashboard
 from dashboards.rag_dashboard import rag_agents_dashboard
 from dashboards.manage_rag_page import manage_rag_agents
@@ -53,6 +53,9 @@ if "conversation" not in st.session_state:
             "content": "You are a strict assistant. If feedback directly answers the question, always prioritize it over the data."
         }
     ]
+
+if 'conversation_history' not in st.session_state:
+    st.session_state.conversation_history = []
 
 # --- Custom CSS Styling ---
 st.markdown("""
@@ -445,6 +448,7 @@ else:
         if st.button("Submit & Process Data"):
             prefix_value = {"CO2": "CO2", "Natural Gas": "NG", "Power": "PW"}.get(prefix, "misc")
             process_files_from_s3_folder(VALID_BUCKET, prefix_value)
+            st.success("Data processed successfully!")
             # add_agent_detail(name, model, temp, prompt)
 
     elif st.session_state.sub_section == "Fine Tuning":
@@ -457,54 +461,71 @@ else:
     elif st.session_state.sub_section == "Dashboard":
         st.subheader("📚 Dashboard")
         # if st.button("🔄 Update from S3"):
-        #     with sqlite3.connect(DB_NAME) as conn:
-        #         process_and_save_from_s3(conn, VALID_BUCKET, aws_access_key, aws_secret_key)
+        #     process_and_save_from_db()
         #     st.success("Data updated!")
-        
-        data = load_data_for_dashboard()
-        segment_json = data.get("by_segment", {})
-        bookattr_json = data.get("by_book_attr8", {})
-        tgroup_json = data.get("by_tgroup1", {})
-        heatmapdata = data.get("heatmap_table", {})
-        summary = data.get("daily_summary_totals", {})
 
-        segment_options = list(segment_json.keys())
-        bookattr_options = list(bookattr_json.keys())
-        tgroup1_options = list(tgroup_json.keys())
+        reports_data = fetch_latest_reports()
 
-        conn = sqlite3.connect(DB_NAME)
-        render_summary_card(summary,client,conn)
+        render_summary_card(reports_data)
 
-        show_nop_cards(data)
+        show_nop_cards(reports_data)
 
-        selected_segment = st.selectbox("Select Segment", segment_options)
-
-        col1, col2= st.columns(2)
+        col1, col2 = st.columns(2)
         with col1:
-            plot_delta_volume_by_horizon( segment_json, selected_segment)
+            plot_delta_volume_from_reports(reports_data)
         with col2:
-            plot_delta_market_value_by_horizon(segment_json, selected_segment)
+            plot_delta_market_from_reports(reports_data)
+
+        col5, col6= st.columns(2)
+        with col5:
+            show_delta_heatmap(reports_data)
+        with col6:
+            show_top5_movers(reports_data)
         
-        selected_tgroup1 = st.selectbox("Select Primary Strategy", tgroup1_options)
-        col5, col6= st.columns(2)
-        with col5:
-            plot_delta_volume_by_horizon_by_tgroup1( tgroup_json, selected_tgroup1)
-        with col6:
-            plot_delta_market_value_by_horizon_by_tgroup1(tgroup_json, selected_tgroup1)
+        # data = load_data_for_dashboard()
+        # segment_json = data.get("by_segment", {})
+        # bookattr_json = data.get("by_book_attr8", {})
+        # tgroup_json = data.get("by_tgroup1", {})
+        # heatmapdata = data.get("heatmap_table", {})
+        # summary = data.get("daily_summary_totals", {})
 
-        selected_book_attr = st.selectbox("Select Business Classification", bookattr_options)
-        col3, col4= st.columns(2)
-        with col3:
-            plot_delta_volume_by_horizon_by_bookattr8(bookattr_json, selected_book_attr)
-        with col4:
-            plot_delta_market_value_by_horizon_by_bookattr8(bookattr_json, selected_book_attr)
+        # segment_options = list(segment_json.keys())
+        # bookattr_options = list(bookattr_json.keys())
+        # tgroup1_options = list(tgroup_json.keys())
 
-        col5, col6= st.columns(2)
-        with col5:
-            row_option = st.radio("Choose row dimension", ["BUCKET", "HORIZON"], horizontal=True)
-            plot_heatmap(heatmapdata, row_option)
-        with col6:
-            show_top5_movers(data)
+        # conn = sqlite3.connect(DB_NAME)
+        # render_summary_card(summary,client,conn)
+
+        # show_nop_cards(data)
+
+        # selected_segment = st.selectbox("Select Segment", segment_options)
+
+        # col1, col2= st.columns(2)
+        # with col1:
+        #     plot_delta_volume_by_horizon( segment_json, selected_segment)
+        # with col2:
+        #     plot_delta_market_value_by_horizon(segment_json, selected_segment)
+        
+        # selected_tgroup1 = st.selectbox("Select Primary Strategy", tgroup1_options)
+        # col5, col6= st.columns(2)
+        # with col5:
+        #     plot_delta_volume_by_horizon_by_tgroup1( tgroup_json, selected_tgroup1)
+        # with col6:
+        #     plot_delta_market_value_by_horizon_by_tgroup1(tgroup_json, selected_tgroup1)
+
+        # selected_book_attr = st.selectbox("Select Business Classification", bookattr_options)
+        # col3, col4= st.columns(2)
+        # with col3:
+        #     plot_delta_volume_by_horizon_by_bookattr8(bookattr_json, selected_book_attr)
+        # with col4:
+        #     plot_delta_market_value_by_horizon_by_bookattr8(bookattr_json, selected_book_attr)
+
+        # col5, col6= st.columns(2)
+        # with col5:
+        #     row_option = st.radio("Choose row dimension", ["BUCKET", "HORIZON"], horizontal=True)
+        #     plot_heatmap(heatmapdata, row_option)
+        # with col6:
+        #     show_top5_movers(data)
         
     elif st.session_state.sub_section in ["Energy Trading Analysis", "Energy Trading Analysis"]:
         if "query_answer" not in st.session_state:
@@ -527,7 +548,9 @@ else:
             st.write(" ")
             if st.button("🧹 Clear Chat"):
                 st.session_state.messages.clear()
-
+                st.session_state.conversation_history.clear()
+                st.session_state.conversation.clear()
+                
         for i, msg in enumerate(st.session_state.messages):
             with st.chat_message(msg["role"]):
                 st.markdown(msg["content"])

@@ -2,7 +2,11 @@ import streamlit as st
 import plotly.graph_objects as go
 import pandas as pd
 import json
+import sqlite3
+from config import DB_NAME,client
 import plotly.express as px
+from DbUtils.DbOperations import load_data_for_dashboard
+from GraphFunctions.dashboardcards import show_nop_cards,render_summary_card
 
 # Chart 1: Delta Volume by Horizon for Segment
 def plot_delta_volume_by_horizon(segment_json, selected_segment):
@@ -168,49 +172,193 @@ def plot_delta_market_value_by_horizon_by_tgroup1(tgroup_json, selected_tgroup1)
     st.plotly_chart(fig, use_container_width=True)
 
 # top5 movers bar graph
-def show_top5_movers(data):
-
-    col1, col2= st.columns(2)
-    with col1:
-        group_by_option = st.selectbox("Group By", ["Segment", "Business Classification", 'Primary Strategy'])
-        if group_by_option == 'Segment':
-            dimension = 'by_segment'
-        elif group_by_option == 'Business Classification':
-            dimension = 'by_book_attr8'
-        elif group_by_option == 'Primary Strategy':
-            dimension = 'by_tgroup1'
-        else:
-            st.warning(f"Invalid dimension '{dimension}' provided.")
-            return
-    with col2:
-        horizons = list(next(iter(data[dimension].values())).keys())
-        selected_horizon = st.selectbox("Select Horizon for Top Movers", horizons, key=f"{dimension}_horizon")
-
-    metric_option = st.radio("Select Metric", ["Volume Baseload", "Market Value Baseload"],horizontal=True, key=f"{dimension}_metric")
-    metric_key = "delta_volume_bl" if metric_option == "Volume Baseload" else "delta_market_bl"
-
-    movers_data = {}
-    for group_name, horizon_dict in data[dimension].items():
-        horizon_data = horizon_dict.get(selected_horizon, [])
-        if horizon_data:
-            latest_delta = horizon_data[-1].get(metric_key, 0)
-            movers_data[group_name] = latest_delta
-
-    if not movers_data:
-        st.info("No delta data available for the selected horizon.")
+def show_top5_movers(reports_data):
+    if not reports_data:
+        st.warning("No data provided.")
         return
 
-    # Sort and take Top 5 by absolute value
-    top5 = sorted(movers_data.items(), key=lambda x: abs(x[1]), reverse=True)[:5]
-    df_plot = pd.DataFrame(top5, columns=[dimension.replace("by_", "").capitalize(), 'Delta'])
+    col1, col2 = st.columns(2)
+    with col1:
+        group_by_option = st.selectbox("Group By", ["Segment", "Business Classification", "Primary Strategy"], key="group_by_option3")
+        section_map = {
+            "Segment": "by_segment_horizon",
+            "Business Classification": "by_book_attr8_horizon",
+            "Primary Strategy": "by_tgroup1_horizon"
+        }
+        section = section_map[group_by_option]
 
-    # Generate bar chart
+    all_horizons = set()
+    for report in reports_data:
+        for group, horizons in report.get(section, {}).items():
+            all_horizons.update(horizons.keys())
+
+    if not all_horizons:
+        st.warning("No horizons found in data.")
+        return
+
+    with col2:
+        selected_horizon = st.selectbox("Select Horizon for Top Movers", sorted(all_horizons), key=f"{section}_horizon")
+
+    metric_option = st.radio("Select Metric", ["Volume Baseload", "Market Value Baseload"], horizontal=True, key=f"{section}_metric")
+    metric_key = "volume_bl" if metric_option == "Volume Baseload" else "market_val_bl"
+
+    group_metric_by_date = {}
+
+    for report in reports_data:
+        report_date = report.get("report_date")
+        section_data = report.get(section, {})
+        for group, horizons in section_data.items():
+            horizon_data = horizons.get(selected_horizon, {})
+            value = horizon_data.get(metric_key, 0)
+            group_metric_by_date.setdefault(group, {})[report_date] = value
+
+    movers_data = {}
+    for group, metrics in group_metric_by_date.items():
+        if len(metrics) < 2:
+            continue
+        sorted_dates = sorted(metrics.keys())
+        delta = metrics[sorted_dates[-1]] - metrics[sorted_dates[-2]]
+        movers_data[group] = delta
+
+    if not movers_data:
+        st.info("Not enough data to compute deltas.")
+        return
+
+    top5 = sorted(movers_data.items(), key=lambda x: abs(x[1]), reverse=True)[:5]
+    df_plot = pd.DataFrame(top5, columns=[group_by_option, 'Delta'])
+
     fig = px.bar(
         df_plot,
-        x=dimension.replace("by_", "").capitalize(),
+        x=group_by_option,
         y='Delta',
         color='Delta',
         color_continuous_scale=['red', 'grey', 'green'],
-        title=f"Top 5 Movers by {group_by_option.replace('by_', '').capitalize()} - {metric_option} ({selected_horizon})"
+        title=f"Top 5 Movers by {group_by_option} - {metric_option} ({selected_horizon})"
     )
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def plot_delta_volume_from_reports(reports_data):
+    if not reports_data or len(reports_data) < 2:
+        st.warning("Not enough report data to display NOP summary.")
+        return
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        group_by_option = st.selectbox("Group By", ["Segment", "Business Classification", "Primary Strategy"])
+        section_map = {
+            "Segment": "by_segment_horizon",
+            "Business Classification": "by_book_attr8_horizon",
+            "Primary Strategy": "by_tgroup1_horizon"
+        }
+        section = section_map.get(group_by_option)
+    
+    latest_report = reports_data[-1]
+    categories = list(latest_report.get(section, {}).keys())
+    if not categories:
+        st.warning("No categories found in selected section.")
+        return
+
+    with col2:
+        category = st.selectbox(f"Select {group_by_option}", categories)
+
+    horizon_volume_by_date = {}
+
+    for report in reports_data:
+        report_date = report.get("report_date")
+        section_data = report.get(section, {}).get(category, {})
+
+        for horizon, values in section_data.items():
+            vol = values.get("volume_bl", 0)
+            if report_date:
+                horizon_volume_by_date.setdefault(horizon, {})[report_date] = vol
+
+    horizons = []
+    deltas = []
+
+    for horizon, volume_by_date in horizon_volume_by_date.items():
+        if len(volume_by_date) < 2:
+            continue
+        sorted_dates = sorted(volume_by_date.keys())
+        last = volume_by_date[sorted_dates[-1]]
+        second_last = volume_by_date[sorted_dates[-2]]
+        delta = last - second_last
+        horizons.append(horizon)
+        deltas.append(delta)
+
+    if not horizons:
+        st.warning("Not enough data to compute deltas.")
+        return
+
+    fig = go.Figure(data=go.Scatter(x=horizons, y=deltas, name='Delta Volume',mode='lines+markers'))
+    fig.update_layout(
+        title=f"📉 Delta Volume by Horizon for '{category}' in '{group_by_option}'",
+        xaxis_title="Horizon",
+        yaxis_title="Delta Volume (Last - Second Last)",
+        template="plotly_white"
+    )
+    fig.update_traces(hovertemplate="Delta: %{y}<extra></extra>")
+    st.plotly_chart(fig, use_container_width=True)
+
+def plot_delta_market_from_reports(reports_data):
+    if not reports_data or len(reports_data) < 2:
+        st.warning("Not enough report data to display NOP summary.")
+        return
+    col1, col2 = st.columns(2)
+
+    with col1:
+        group_by_option = st.selectbox("Group By", ["Segment", "Business Classification", "Primary Strategy"], key="group_by_option")
+        section_map = {
+            "Segment": "by_segment_horizon",
+            "Business Classification": "by_book_attr8_horizon",
+            "Primary Strategy": "by_tgroup1_horizon",
+        }
+        section = section_map.get(group_by_option)
+    
+    latest_report = reports_data[-1]
+    categories = list(latest_report.get(section, {}).keys())
+    if not categories:
+        st.warning("No categories found in selected section.")
+        return
+
+    with col2:
+        category = st.selectbox(f"Select {group_by_option}", categories, key="category")
+
+    horizon_volume_by_date = {}
+
+    for report in reports_data:
+        report_date = report.get("report_date")
+        section_data = report.get(section, {}).get(category, {})
+
+        for horizon, values in section_data.items():
+            vol = values.get("market_val_bl", 0)
+            if report_date:
+                horizon_volume_by_date.setdefault(horizon, {})[report_date] = vol
+
+    horizons = []
+    deltas = []
+
+    for horizon, volume_by_date in horizon_volume_by_date.items():
+        if len(volume_by_date) < 2:
+            continue
+        sorted_dates = sorted(volume_by_date.keys())
+        last = volume_by_date[sorted_dates[-1]]
+        second_last = volume_by_date[sorted_dates[-2]]
+        delta = last - second_last
+        horizons.append(horizon)
+        deltas.append(delta)
+
+    if not horizons:
+        st.warning("Not enough data to compute deltas.")
+        return
+
+    fig = go.Figure(data=go.Scatter(x=horizons, y=deltas, name='Delta Markrt Value',mode='lines+markers'))
+    fig.update_layout(
+        title=f"📉 Delta Market Value by Horizon for '{category}' in '{group_by_option}'",
+        xaxis_title="Horizon",
+        yaxis_title="Delta Market Value (Last - Second Last)",
+        template="plotly_white"
+    )
+    fig.update_traces(hovertemplate="Delta: %{y}<extra></extra>")
     st.plotly_chart(fig, use_container_width=True)
