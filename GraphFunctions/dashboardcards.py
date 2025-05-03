@@ -166,9 +166,9 @@ def generate_segment_summary_from_bl_data(daily_reports):
     latest = sorted_reports[0]
     previous = sorted_reports[1]
 
-    seg_changes = get_delta_dict(latest["by_segment"], previous["by_segment"], "Segment")
-    book_changes = get_delta_dict(latest["by_book_attr8"], previous["by_book_attr8"], "Book")
-    tgroup1_changes = get_delta_dict(latest["by_tgroup1"], previous["by_tgroup1"], "Tgroup1")
+    seg_changes = get_delta_dict(latest["by_segment_horizon"], previous["by_segment_horizon"], "Segment")
+    book_changes = get_delta_dict(latest["by_book_attr8_horizon"], previous["by_book_attr8_horizon"], "Book")
+    tgroup1_changes = get_delta_dict(latest["by_tgroup1_horizon"], previous["by_tgroup1_horizon"], "Tgroup1")
 
     def format_changes(changes, label):
         header = f"{label} | Horizon | ΔVolume_BL | ΔMkt_Val_BL"
