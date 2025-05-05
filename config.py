@@ -10,3 +10,5 @@ aws_access_key = os.getenv("AWS_ACCESS_KEY")
 aws_secret_key = os.getenv("AWS_SECRET_KEY")
 
 client = OpenAI(api_key= st.secrets["OPENAI_API_KEY"])
+
+log_file_path = "sqlquery_log.txt"

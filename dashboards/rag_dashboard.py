@@ -93,7 +93,7 @@ def rag_agents_dashboard():
     col1.metric("Total Agents", len(agent_df))
     col2.metric("Active Agents", (agent_df["status"] == "Active").sum())
     col3.metric("Total Queries Today", agent_df["queries_today"].sum())
-    col4.metric("Avg Latency (s)", round(agent_df["avg_latency"].dropna().mean(), 2))
+    col4.metric("Avg Latency (Sec)", round(agent_df["avg_latency"].dropna().mean(), 2))
     style_metric_cards()
 
     st.markdown("---")

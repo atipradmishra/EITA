@@ -9,7 +9,7 @@ import os
 import matplotlib.pyplot as plt
 import re
 from openai import OpenAI
-from config import aws_access_key, aws_secret_key, client, DB_NAME, VALID_BUCKET, REJECTED_BUCKET
+from config import aws_access_key, aws_secret_key, client, DB_NAME, VALID_BUCKET, REJECTED_BUCKET, log_file_path
 from DataProcessing.GraphDataProcess import process_and_save_byfile,process_and_save_pw_from_db
 from GraphFunctions.dashboardgraphs import plot_delta_volume_from_reports, plot_delta_market_from_reports,show_top5_movers
 from GraphFunctions.heatmaptable import show_delta_heatmap
@@ -117,7 +117,7 @@ def sidebar_menu():
         sub_sections = {
             "Data Management AI Agent": ["Data File Tracking Dashboard", "Data Pipeline", "Processed Data"],
             "RAG AI Agent": ["RAG Dashboard", "Manage RAG Agents", "Fine Tuning", "Settings"],
-            "Application AI Agent": ["Dashboard","Energy Trading Analysis", "Graph Query", "Deviation Analysis", "Root Cause Analysis", "Analysis History", "User Feedback"]
+            "Application AI Agent": ["Dashboard","Energy Trading Analysis", "Graph Query", "Deviation Analysis","Show SQL Agent Logs", "Root Cause Analysis", "Analysis History", "User Feedback"]
         }
         if st.session_state.sub_section not in sub_sections[main_section]:
             st.session_state.sub_section = sub_sections[main_section][0]
@@ -134,6 +134,26 @@ def top_right_menu():
     with col2:
         if st.button("🔴 Logout", key="logout_btn", help="Logout from the platform"):
             logout()
+
+def stream_log_file(log_file_path: str, title="🧠 Execution Log", max_lines=200):
+    st.markdown(f"### {title}")
+    print(f"I am in this loop {log_file_path}")
+    
+    if not os.path.exists(log_file_path):
+        st.warning("Log file not found.")
+        return
+
+    # Only read file and update once per rerun
+    with open(log_file_path, "r") as f:
+        lines = f.readlines()[-max_lines:]  # Only keep last N lines
+        content = "".join(lines)
+
+    # Safe to use fixed key here — not inside a loop
+    st.text_area("Logs", content, height=500, key=f"log_text_area_{title}")
+
+    # Add a refresh button to allow user to rerun and see updates
+    if st.button("🔄 Refresh Log"):
+        st.experimental_rerun()
 
 
 # --- User Authentication Interface ---
@@ -184,15 +204,14 @@ else:
         with col1:
             if st.button("Download CO2 Metadata File from S3"):
                 try:
-                    metadata = get__metadata_file_path("CO2")
-                    metadata_s3_path = metadata[0]
+                    metadata_s3_path = get__metadata_file_path("CO2")
                     file_obj = download_file_from_s3(metadata_s3_path, VALID_BUCKET)
                     if file_obj:
                         st.success("✅ Metadata file fetched successfully.")
                         st.download_button(
                             label="📄 Click to Download Metadata CSV",
                             data=file_obj.getvalue(),
-                            file_name=metadata[1],
+                            file_name="metadata.csv",
                             mime="text/csv"
                         )
                     else:
@@ -203,15 +222,14 @@ else:
         with col2:
             if st.button("Download NG Metadata File from S3"):
                 try:
-                    metadata = get__metadata_file_path("NG")
-                    metadata_s3_path = metadata[0]
+                    metadata_s3_path = get__metadata_file_path("NG")
                     file_obj = download_file_from_s3(metadata_s3_path, VALID_BUCKET)
                     if file_obj:
                         st.success("✅ Metadata file fetched successfully.")
                         st.download_button(
                             label="📄 Click to Download Metadata CSV",
                             data=file_obj.getvalue(),
-                            file_name=metadata[1],
+                            file_name="metadata.csv",
                             mime="text/csv"
                         )
                     else:
@@ -350,8 +368,18 @@ else:
         
         st.markdown("---")
         st.markdown("### 📥 Download Existing Business Domain Dictionary file.")
-        if st.button("Download Business Domain Dictionary File"):
-            st.success("✅ Business Domain Dictionary file fetched successfully.")
+        try:
+            with open("temp/ETAI Business domain Dictionary PW.xlsx", "rb") as f:
+                file_data = f.read()
+                if st.download_button(
+                    label="📥 Download Business Domain Dictionary File",
+                    data=file_data,
+                    file_name="ETAI Business domain Dictionary PW.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                ):
+                    st.success("✅ Business Domain Dictionary file fetched successfully.")
+        except FileNotFoundError:
+            st.error("❌ File not found: domain dictionary found")
             # try:
             #     metadata_s3_path = get__metadata_file_path("CO2")
             #     file_obj = download_file_from_s3(metadata_s3_path, VALID_BUCKET)
@@ -723,6 +751,17 @@ else:
 
     elif st.session_state.sub_section == "Deviation Analysis":
         st.subheader("📊 Deviation Analysis")
+
+    elif st.session_state.sub_section == "Show SQL Agent Logs":
+        st.subheader("📊 Query Agent Log Analysis")
+        st.write("Log FILES Check")
+
+        #log_file_path = r"C:\Users\User\Downloads\EITAA1\EITA\sqlquery_log.txt"
+
+        if st.button('Show log file'):
+            # Replace with actual function
+            #st.write("Button clicked!")
+            stream_log_file(log_file_path, title="🔍 SQL Query Agent Logs")
 
     elif st.session_state.sub_section == "Root Cause Analysis":
         st.subheader("⚠️ Root Cause Analysis")

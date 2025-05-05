@@ -1,3 +1,12 @@
+import logging
+
+# Setup logging
+logging.basicConfig(
+    filename='sqlquery_log.txt',
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s'
+)
+
 # Import needed libraries at the top of your script
 import os
 import streamlit as st
@@ -29,7 +38,7 @@ def log_token_usage(description: str, text: str) -> int:
     token_count = count_tokens(text)
     # Store both description and count for better reporting
     token_usage_records.append({"description": description, "count": token_count})
-    print(f"📊 TOKEN USAGE - {description}: {token_count} tokens")
+    logging.info(f"📊 TOKEN USAGE - {description}: {token_count} tokens")
     return token_count
 
 
@@ -43,9 +52,9 @@ def print_token_usage_report():
     """Print a detailed report of token usage for all operations."""
     total, records = get_total_token_count()
     
-    print("\n" + "="*50)
-    print("📊 TOKEN USAGE REPORT 📊")
-    print("="*50)
+    logging.info("\n" + "="*50)
+    logging.info("📊 TOKEN USAGE REPORT 📊")
+    logging.info("="*50)
     
     # Group by description to consolidate multiple calls to the same operation
     grouped_usage = {}
@@ -59,11 +68,11 @@ def print_token_usage_report():
     # Print each operation's usage
     for desc, count in grouped_usage.items():
         percentage = (count / total) * 100 if total > 0 else 0
-        print(f"{desc}: {count} tokens ({percentage:.1f}%)")
+        logging.info(f"{desc}: {count} tokens ({percentage:.1f}%)")
     
-    print("-"*50)
-    print(f"TOTAL TOKEN USAGE: {total} tokens")
-    print("="*50)
+    logging.info("-"*50)
+    logging.info(f"TOTAL TOKEN USAGE: {total} tokens")
+    logging.info("="*50)
     
     return total
 
@@ -73,15 +82,15 @@ def retrieve_feedback_for(question: str) -> List[str]:
     Loads all feedback logs from the DB, builds a FAISS index,
     and returns the top feedback_insights for this question.
     """
-    print("🔍 FEEDBACK RETRIEVAL AGENT: Loading feedback data...")
+    logging.info("🔍 FEEDBACK RETRIEVAL AGENT: Loading feedback data...")
     try:
         # 1. Pull every feedback record
         feedback_logs = load_feedback_data()
         # 2. Index them
-        print("🔍 FEEDBACK RETRIEVAL AGENT: Building FAISS index...")
+        logging.info("🔍 FEEDBACK RETRIEVAL AGENT: Building FAISS index...")
         faiss_idx, indexed_logs = create_faiss_index(feedback_logs)
         # 3. Retrieve the most relevant feedback snippets
-        print("🔍 FEEDBACK RETRIEVAL AGENT: Finding relevant feedback...")
+        logging.info("🔍 FEEDBACK RETRIEVAL AGENT: Finding relevant feedback...")
         insights = retrieve_feedback_insights(question, faiss_idx, indexed_logs)
         
         # Log token usage for feedback retrieval
@@ -91,12 +100,12 @@ def retrieve_feedback_for(question: str) -> List[str]:
         
         return insights
     except Exception as e:
-        print(f"❌ FEEDBACK RETRIEVAL AGENT: Error retrieving feedback - {str(e)}")
+        logging.info(f"❌ FEEDBACK RETRIEVAL AGENT: Error retrieving feedback - {str(e)}")
         return []  # Return empty list on error to allow system to continue
 
 
 def execute_query(sql_query, category=None):
-    print("🔄 SQL EXECUTOR: Executing database query...")
+    logging.info("🔄 SQL EXECUTOR: Executing database query...")
     
     # Get the table name that might be expected in this query
     table_name = get_table_name_by_category(category) if category else "raw_data"
@@ -110,26 +119,26 @@ def execute_query(sql_query, category=None):
         
         # Handle the case where no rows are returned
         if not rows:
-            print("⚠️ SQL EXECUTOR: Query returned no results")
+            logging.info("⚠️ SQL EXECUTOR: Query returned no results")
             return {"columns": [], "rows": [], "warning": "Query returned no results. Please check your filters or criteria."}
             
         columns = [desc[0] for desc in cursor.description]
         result = {"columns": columns, "rows": rows}
-        print(f"✅ SQL EXECUTOR: Query completed successfully with {len(rows)} rows returned")
+        logging.info(f"✅ SQL EXECUTOR: Query completed successfully with {len(rows)} rows returned")
 
                 # Print query results in a formatted way
-        print("\n=== QUERY RESULTS ===")
-        print(" | ".join(columns))
-        print("-" * (sum(len(col) for col in columns) + 3 * (len(columns) - 1)))
+        logging.info("\n=== QUERY RESULTS ===")
+        logging.info(" | ".join(columns))
+        logging.info("-" * (sum(len(col) for col in columns) + 3 * (len(columns) - 1)))
         for row in rows:
-            print(" | ".join(str(cell) for cell in row))
-        print("====================\n")
+            logging.info(" | ".join(str(cell) for cell in row))
+        logging.info("====================\n")
 
 
         return result
     except sqlite3.Error as sql_e:
         error_msg = str(sql_e)
-        print(f"❌ SQL EXECUTOR: SQLite error - {error_msg}")
+        logging.info(f"❌ SQL EXECUTOR: SQLite error - {error_msg}")
         
         # Provide more specific error messages for common SQL errors
         if "no such column" in error_msg.lower():
@@ -141,7 +150,7 @@ def execute_query(sql_query, category=None):
             return {"error": f"Database error: {error_msg}"}
     except Exception as e:
         error_msg = str(e)
-        print(f"❌ SQL EXECUTOR: General error - {error_msg}")
+        logging.info(f"❌ SQL EXECUTOR: General error - {error_msg}")
         return {"error": f"Error executing query: {error_msg}"}
     finally:
         if conn:
@@ -235,9 +244,9 @@ NG = {
 
 def get_schema_by_category(category):
     """Get schema for a specific category with fallback."""
-    print(f"📋 SCHEMA MANAGER: Retrieving schema for {category} category...")
+    logging.info(f"📋 SCHEMA MANAGER: Retrieving schema for {category} category...")
     if not category:
-        print("⚠️ SCHEMA MANAGER: No category provided, using Power as default")
+        logging.info("⚠️ SCHEMA MANAGER: No category provided, using Power as default")
         return PW  # Default to Power if no category specified
         
     if category.lower() == "power":
@@ -247,7 +256,7 @@ def get_schema_by_category(category):
     elif category.lower() in ["natural gas", "ng"]:
         return NG
     else:
-        print(f"⚠️ SCHEMA MANAGER: Unknown category: {category}, using Power as default")
+        logging.info(f"⚠️ SCHEMA MANAGER: Unknown category: {category}, using Power as default")
         return PW  # Default to Power for unknown categories
 
 def get_table_name_by_category(category):
@@ -259,10 +268,10 @@ def get_table_name_by_category(category):
     Returns:
         str: The table name to use for the specified category
     """
-    print(f"📋 TABLE NAME MANAGER: Determining table name for {category} category...")
+    logging.info(f"📋 TABLE NAME MANAGER: Determining table name for {category} category...")
     
     if not category:
-        print("⚠️ TABLE NAME MANAGER: No category provided, using PW_raw_data as default")
+        logging.info("⚠️ TABLE NAME MANAGER: No category provided, using PW_raw_data as default")
         return "PW_raw_data"  # Default to Power if no category specified
         
     if category.lower() == "power":
@@ -272,7 +281,7 @@ def get_table_name_by_category(category):
     elif category.lower() in ["natural gas", "ng"]:
         return "NG_raw_data"
     else:
-        print(f"⚠️ TABLE NAME MANAGER: Unknown category: {category}, using PW_raw_data as default")
+        logging.info(f"⚠️ TABLE NAME MANAGER: Unknown category: {category}, using PW_raw_data as default")
         return "PW_raw_data"  # Default to Power for unknown categories
 
 
@@ -286,16 +295,16 @@ def generate_sql_tool(
     """Generate an SQLite query from natural language using OpenAI,
     now prefaced with any historical feedback warnings."""
     
-    print("🤖 SQL GENERATOR AGENT: Starting SQL generation process...")
+    logging.info("🤖 SQL GENERATOR AGENT: Starting SQL generation process...")
     
     # Get the appropriate table name for this category
     table_name = get_table_name_by_category(category)
-    print(f"🤖 SQL GENERATOR AGENT: Using table {table_name} for {category} category")
+    logging.info(f"🤖 SQL GENERATOR AGENT: Using table {table_name} for {category} category")
 
     # 1. Fetch the JSON schema for this category
     schema = get_schema_by_category(category)
     if schema is None:
-        print("❌ SQL GENERATOR AGENT: Failed to retrieve schema")
+        logging.info("❌ SQL GENERATOR AGENT: Failed to retrieve schema")
         return "Error: Unknown category. Using Power category as default."
     
     # 2. Serialize just the columns_and_definitions map
@@ -304,9 +313,9 @@ def generate_sql_tool(
     
     # 3. System prompt now includes feedback_text at the top
     if feedback_text:
-        print(f"📋 SQL GENERATOR AGENT: Incorporating feedback into SQL generation:\n{feedback_text}")
+        logging.info(f"📋 SQL GENERATOR AGENT: Incorporating feedback into SQL generation:\n{feedback_text}")
     else:
-        print("ℹ️ SQL GENERATOR AGENT: No feedback text provided for SQL generation.")
+        logging.info("ℹ️ SQL GENERATOR AGENT: No feedback text provided for SQL generation.")
 
     # Enhanced system message with net open position handling instruction
     system_msg = (
@@ -352,11 +361,11 @@ User request:
 
     # Count tokens for request
     input_tokens = log_token_usage("SQL Generator Input", system_msg + user_prompt)
-    print(f"🤖 SQL GENERATOR AGENT: Prompt prepared ({input_tokens} tokens)")
+    logging.info(f"🤖 SQL GENERATOR AGENT: Prompt prepared ({input_tokens} tokens)")
 
     # 5. Call the LLM with error handling
     try:
-        print("🤖 SQL GENERATOR AGENT: Calling OpenAI API...")
+        logging.info("🤖 SQL GENERATOR AGENT: Calling OpenAI API...")
         response = client.chat.completions.create(
             model="gpt-4",
             messages=[
@@ -368,7 +377,7 @@ User request:
         
         # Count tokens for response
         output_tokens = log_token_usage("SQL Generator Output", sql)
-        print(f"🤖 SQL GENERATOR AGENT: Received SQL query ({output_tokens} tokens)")
+        logging.info(f"🤖 SQL GENERATOR AGENT: Received SQL query ({output_tokens} tokens)")
         
         # 6. Strip any code fences
         if sql.startswith("```"):
@@ -381,17 +390,17 @@ User request:
         # 7. Replace any hardcoded placeholder with actual table name
         sql = sql.replace("tableName", table_name)
         
-        print("✅ SQL GENERATOR AGENT: SQL generation completed")
+        logging.info("✅ SQL GENERATOR AGENT: SQL generation completed")
         return sql
     except Exception as e:
         error_msg = str(e)
-        print(f"❌ SQL GENERATOR AGENT: Error generating SQL - {error_msg}")
+        logging.info(f"❌ SQL GENERATOR AGENT: Error generating SQL - {error_msg}")
         return f"Error generating SQL: {error_msg}"
 
  
 def assess_question_complexity(question: str, category: str = None) -> bool:
     """Determine if a question requires multi-query processing."""
-    print("🧠 COMPLEXITY ASSESSOR: Analyzing question complexity...")
+    logging.info("🧠 COMPLEXITY ASSESSOR: Analyzing question complexity...")
     
     # Get schema if category is provided
     schema_info = ""
@@ -424,10 +433,10 @@ def assess_question_complexity(question: str, category: str = None) -> bool:
     
     # Count tokens for complexity assessment
     input_tokens = log_token_usage("Complexity Assessment Input", prompt)
-    print(f"🧠 COMPLEXITY ASSESSOR: Prompt prepared ({input_tokens} tokens)")
+    logging.info(f"🧠 COMPLEXITY ASSESSOR: Prompt prepared ({input_tokens} tokens)")
     
     try:
-        print("🧠 COMPLEXITY ASSESSOR: Calling OpenAI API...")
+        logging.info("🧠 COMPLEXITY ASSESSOR: Calling OpenAI API...")
         response = client.chat.completions.create(
             model="gpt-4",
             messages=[
@@ -442,10 +451,10 @@ def assess_question_complexity(question: str, category: str = None) -> bool:
         output_tokens = log_token_usage("Complexity Assessment Output", answer)
         
         is_complex = "yes" in answer
-        print(f"🧠 COMPLEXITY ASSESSOR: Question {'is complex' if is_complex else 'is simple'}")
+        logging.info(f"🧠 COMPLEXITY ASSESSOR: Question {'is complex' if is_complex else 'is simple'}")
         return is_complex  # True if complex, False if simple
     except Exception as e:
-        print(f"❌ COMPLEXITY ASSESSOR: Error assessing complexity - {str(e)}")
+        logging.info(f"❌ COMPLEXITY ASSESSOR: Error assessing complexity - {str(e)}")
         # Default to simple in case of error
         return False
 
@@ -453,7 +462,7 @@ def assess_question_complexity(question: str, category: str = None) -> bool:
 # Query planning function with improved error handling
 def plan_queries(user_question: str, category: str = None) -> List[str]:
     """Break down complex questions into simpler sub-questions."""
-    print("📝 QUERY PLANNER: Planning query breakdown...")
+    logging.info("📝 QUERY PLANNER: Planning query breakdown...")
     
     # Get schema if category is provided
     schema_info = ""
@@ -500,10 +509,10 @@ def plan_queries(user_question: str, category: str = None) -> List[str]:
 
     # Count tokens for query planning
     input_tokens = log_token_usage("Query Planning Input", prompt)
-    print(f"📝 QUERY PLANNER: Prompt prepared ({input_tokens} tokens)")
+    logging.info(f"📝 QUERY PLANNER: Prompt prepared ({input_tokens} tokens)")
     
     try:
-        print("📝 QUERY PLANNER: Calling OpenAI API...")
+        logging.info("📝 QUERY PLANNER: Calling OpenAI API...")
         response = client.chat.completions.create(
             model="gpt-4",
             messages=[
@@ -528,18 +537,18 @@ def plan_queries(user_question: str, category: str = None) -> List[str]:
             result = json.loads(response_text)
             if "questions" in result:
                 sub_questions = result["questions"]
-                print(f"📝 QUERY PLANNER: Generated {len(sub_questions)} sub-questions")
+                logging.info(f"📝 QUERY PLANNER: Generated {len(sub_questions)} sub-questions")
                 return sub_questions
             else:
-                print("⚠️ QUERY PLANNER: No 'questions' key in response, returning original question")
+                logging.info("⚠️ QUERY PLANNER: No 'questions' key in response, returning original question")
         except json.JSONDecodeError:
-            print(f"❌ QUERY PLANNER: Invalid JSON: {response_text}")
+            logging.info(f"❌ QUERY PLANNER: Invalid JSON: {response_text}")
         
         # Return original question if we can't parse the response
-        print("📝 QUERY PLANNER: Fallback to original question")
+        logging.info("📝 QUERY PLANNER: Fallback to original question")
         return [user_question]  # Fallback to original question
     except Exception as e:
-        print(f"❌ QUERY PLANNER: Error planning queries: {e}")
+        logging.info(f"❌ QUERY PLANNER: Error planning queries: {e}")
         # If parsing fails, return the original question
         return [user_question]
 
@@ -547,11 +556,11 @@ def plan_queries(user_question: str, category: str = None) -> List[str]:
 # Query plan validation with improved error handling
 def validate_query_plan(original_question: str, sub_questions: List[str], category: str = None) -> bool:
     """Validates if breaking into sub-questions is necessary."""
-    print("✅ PLAN VALIDATOR: Validating query plan necessity...")
+    logging.info("✅ PLAN VALIDATOR: Validating query plan necessity...")
     
     # Safety check for input
     if not sub_questions:
-        print("⚠️ PLAN VALIDATOR: No sub-questions provided, assuming single query is sufficient")
+        logging.info("⚠️ PLAN VALIDATOR: No sub-questions provided, assuming single query is sufficient")
         return False
     
     # Get schema if category is provided
@@ -580,10 +589,10 @@ def validate_query_plan(original_question: str, sub_questions: List[str], catego
     
     # Count tokens for validation
     input_tokens = log_token_usage("Plan Validation Input", prompt)
-    print(f"✅ PLAN VALIDATOR: Prompt prepared ({input_tokens} tokens)")
+    logging.info(f"✅ PLAN VALIDATOR: Prompt prepared ({input_tokens} tokens)")
     
     try:
-        print("✅ PLAN VALIDATOR: Calling OpenAI API...")
+        logging.info("✅ PLAN VALIDATOR: Calling OpenAI API...")
         response = client.chat.completions.create(
             model="gpt-4",
             messages=[
@@ -598,10 +607,10 @@ def validate_query_plan(original_question: str, sub_questions: List[str], catego
         output_tokens = log_token_usage("Plan Validation Output", answer)
         
         is_necessary = "NECESSARY" in answer
-        print(f"✅ PLAN VALIDATOR: Breaking into sub-questions is {'necessary' if is_necessary else 'unnecessary'}")
+        logging.info(f"✅ PLAN VALIDATOR: Breaking into sub-questions is {'necessary' if is_necessary else 'unnecessary'}")
         return is_necessary
     except Exception as e:
-        print(f"❌ PLAN VALIDATOR: Error validating plan - {str(e)}")
+        logging.info(f"❌ PLAN VALIDATOR: Error validating plan - {str(e)}")
         # Default to unnecessary in case of error
         return False
 
@@ -609,14 +618,14 @@ def validate_query_plan(original_question: str, sub_questions: List[str], catego
 # Multi-query execution with improved error handling
 def execute_multi_query(sub_questions: List[str], category=None) -> List[Dict[str, Any]]:
     """Execute multiple queries and return their results."""
-    print("🔄 MULTI-QUERY EXECUTOR: Starting multi-query execution...")
+    logging.info("🔄 MULTI-QUERY EXECUTOR: Starting multi-query execution...")
     results = []
     
     total_tokens = 0
     
     for i, question in enumerate(sub_questions):
         try:
-            print(f"\n🔄 MULTI-QUERY EXECUTOR: Processing sub-question {i+1}/{len(sub_questions)}: {question}")
+            logging.info(f"\n🔄 MULTI-QUERY EXECUTOR: Processing sub-question {i+1}/{len(sub_questions)}: {question}")
             sql_query = generate_sql_tool.run({
                 "input_text": question,
                 "category": category
@@ -624,7 +633,7 @@ def execute_multi_query(sub_questions: List[str], category=None) -> List[Dict[st
             
             # Check if SQL generation failed
             if isinstance(sql_query, str) and sql_query.startswith("Error"):
-                print(f"⚠️ MULTI-QUERY EXECUTOR: SQL generation failed - {sql_query}")
+                logging.info(f"⚠️ MULTI-QUERY EXECUTOR: SQL generation failed - {sql_query}")
                 results.append({
                     "question": question,
                     "sql": "Error generating SQL",
@@ -632,7 +641,7 @@ def execute_multi_query(sub_questions: List[str], category=None) -> List[Dict[st
                 })
                 continue
                 
-            print(f"🔄 MULTI-QUERY EXECUTOR: Executing SQL: {sql_query}")
+            logging.info(f"🔄 MULTI-QUERY EXECUTOR: Executing SQL: {sql_query}")
             result = execute_query(sql_query, category)  # Pass category to execute_query
             
             # Track SQL size for token counting
@@ -646,14 +655,14 @@ def execute_multi_query(sub_questions: List[str], category=None) -> List[Dict[st
             })
         except Exception as e:
             error_msg = str(e)
-            print(f"❌ MULTI-QUERY EXECUTOR: Error processing question '{question}': {error_msg}")
+            logging.info(f"❌ MULTI-QUERY EXECUTOR: Error processing question '{question}': {error_msg}")
             results.append({
                 "question": question,
                 "sql": "Error occurred",
                 "result": {"error": f"Error processing this sub-question: {error_msg}"}
             })
     
-    print(f"✅ MULTI-QUERY EXECUTOR: Completed execution of {len(sub_questions)} queries (Total SQL tokens: {total_tokens})")
+    logging.info(f"✅ MULTI-QUERY EXECUTOR: Completed execution of {len(sub_questions)} queries (Total SQL tokens: {total_tokens})")
     return results
 
 
@@ -664,7 +673,7 @@ def synthesize_results(
     feedback_text: str = ""
 ) -> str:
     """Combine multiple query results into a comprehensive answer with feedback context."""
-    print("🧩 RESULTS SYNTHESIZER: Combining query results into comprehensive answer...")
+    logging.info("🧩 RESULTS SYNTHESIZER: Combining query results into comprehensive answer...")
     
     # Check if we have any results to synthesize
     if not query_results:
@@ -712,11 +721,11 @@ you can from the successful queries.
 
     # Count tokens for synthesis request
     input_tokens = log_token_usage("Results Synthesis Input", synthesis_prompt)
-    print(f"🧩 RESULTS SYNTHESIZER: Prompt prepared ({input_tokens} tokens)")
+    logging.info(f"🧩 RESULTS SYNTHESIZER: Prompt prepared ({input_tokens} tokens)")
 
     try:
         # 3. Call the LLM
-        print("🧩 RESULTS SYNTHESIZER: Calling OpenAI API...")
+        logging.info("🧩 RESULTS SYNTHESIZER: Calling OpenAI API...")
         response = client.chat.completions.create(
             model="gpt-4",
             messages=[
@@ -729,12 +738,12 @@ you can from the successful queries.
         
         # Count tokens for response
         output_tokens = log_token_usage("Results Synthesis Output", synthesis)
-        print(f"✅ RESULTS SYNTHESIZER: Synthesis completed ({output_tokens} tokens)")
+        logging.info(f"✅ RESULTS SYNTHESIZER: Synthesis completed ({output_tokens} tokens)")
         
         return synthesis
     except Exception as e:
         error_msg = str(e)
-        print(f"❌ RESULTS SYNTHESIZER: Error synthesizing results - {error_msg}")
+        logging.info(f"❌ RESULTS SYNTHESIZER: Error synthesizing results - {error_msg}")
         # Provide a fallback synthesis
         return f"Unable to synthesize results due to an error. Raw query results are available but synthesis failed with: {error_msg}"
 
@@ -743,7 +752,7 @@ you can from the successful queries.
 def run_graph_agent(prompt: str, category=None, feedback_text: str = "") -> Dict[str, Any]:
     """Takes a natural language prompt and returns SQL query results,
     now enriched with any historical feedback warnings."""
-    print("🎮 QUERY COORDINATOR: Processing simple query...")
+    logging.info("🎮 QUERY COORDINATOR: Processing simple query...")
     
     try:
         # Step 1: Generate SQL using OpenAI (including feedback_text)
@@ -755,10 +764,10 @@ def run_graph_agent(prompt: str, category=None, feedback_text: str = "") -> Dict
         
         # Check if SQL generation failed
         if isinstance(sql_query, str) and sql_query.startswith("Error"):
-            print(f"⚠️ QUERY COORDINATOR: SQL generation failed - {sql_query}")
+            logging.info(f"⚠️ QUERY COORDINATOR: SQL generation failed - {sql_query}")
             return {"error": sql_query}
             
-        print(f"🎮 QUERY COORDINATOR: Generated SQL - {sql_query}")
+        logging.info(f"🎮 QUERY COORDINATOR: Generated SQL - {sql_query}")
 
         # Step 2: Execute the SQL and return the result
         result = execute_query(sql_query, category)  # Pass category to execute_query
@@ -766,11 +775,11 @@ def run_graph_agent(prompt: str, category=None, feedback_text: str = "") -> Dict
         # Add the SQL query to the result for transparency
         result["sql_query"] = sql_query
         
-        print("✅ QUERY COORDINATOR: Simple query processing completed")
+        logging.info("✅ QUERY COORDINATOR: Simple query processing completed")
         return result
     except Exception as e:
         error_msg = str(e)
-        print(f"❌ QUERY COORDINATOR: Error processing query - {error_msg}")
+        logging.info(f"❌ QUERY COORDINATOR: Error processing query - {error_msg}")
         return {"error": f"Error processing query: {error_msg}", "sql_query": "Error occurred"}
 
 
@@ -778,8 +787,8 @@ def run_orchestrated_agent(user_question, category=None, conversation_history=No
     """Orchestrates multi-query execution for complex questions with memory."""
     # Reset our token log so each run is fresh
     token_usage_records.clear()
-    print("\n🎭 ORCHESTRATION AGENT: Starting orchestration process...")
-    print(f"🎭 ORCHESTRATION AGENT: Processing question: {user_question}")
+    logging.info("\n🎭 ORCHESTRATION AGENT: Starting orchestration process...")
+    logging.info(f"🎭 ORCHESTRATION AGENT: Processing question: {user_question}")
     
     # Start tracking total token usage
     total_tokens = 0
@@ -792,13 +801,13 @@ def run_orchestrated_agent(user_question, category=None, conversation_history=No
     # Special handling for net open position queries
     is_net_position_query = "net open position" in user_question.lower() or "open position" in user_question.lower()
     if is_net_position_query:
-        print("🎭 ORCHESTRATION AGENT: Detected net open position query - applying special handling")
+        logging.info("🎭 ORCHESTRATION AGENT: Detected net open position query - applying special handling")
         
         # Determine if it's volume or value based
         is_value_based = any(term in user_question.lower() for term in ["value", "money", "dollar", "financial", "price"])
         
         column_to_use = "MKT_VAL_BL" if is_value_based else "VOLUME_BL"
-        print(f"🎭 ORCHESTRATION AGENT: Using {column_to_use} for net position query")
+        logging.info(f"🎭 ORCHESTRATION AGENT: Using {column_to_use} for net position query")
     
     # 1. Add the user question to memory
     conversation_history.append({"role": "user", "content": user_question})
@@ -808,16 +817,16 @@ def run_orchestrated_agent(user_question, category=None, conversation_history=No
         feedback_insights = retrieve_feedback_for(user_question)
         feedback_text = "\n".join(feedback_insights) if feedback_insights else ""
     except Exception as e:
-        print(f"⚠️ ORCHESTRATION AGENT: Error retrieving feedback - {e}")
+        logging.info(f"⚠️ ORCHESTRATION AGENT: Error retrieving feedback - {e}")
         feedback_text = ""
     
     # 2. Assess complexity based on memory-aware prompt (optional: pass memory if needed)
-    print("🎭 ORCHESTRATION AGENT: Assessing question complexity...")
+    logging.info("🎭 ORCHESTRATION AGENT: Assessing question complexity...")
     try:
         is_complex = assess_question_complexity(user_question, category)
         
         if not is_complex:
-            print("🎭 ORCHESTRATION AGENT: Question is simple - using single query approach")
+            logging.info("🎭 ORCHESTRATION AGENT: Question is simple - using single query approach")
             result = run_graph_agent(user_question, category, feedback_text)
             
             # 3. Add the assistant response to memory
@@ -828,10 +837,10 @@ def run_orchestrated_agent(user_question, category=None, conversation_history=No
             # Generate token usage report
             final_token_count = print_token_usage_report()
             
-            print(f"✅ ORCHESTRATION AGENT: Simple query completed (Total tokens: {final_token_count})")
+            logging.info(f"✅ ORCHESTRATION AGENT: Simple query completed (Total tokens: {final_token_count})")
             return result, False
         
-        print("🎭 ORCHESTRATION AGENT: Question is complex - planning sub-questions...")
+        logging.info("🎭 ORCHESTRATION AGENT: Question is complex - planning sub-questions...")
         sub_questions = plan_queries(user_question, category)
         
         # Track tokens for sub-questions
@@ -839,7 +848,7 @@ def run_orchestrated_agent(user_question, category=None, conversation_history=No
             total_tokens += count_tokens(q)
         
         if len(sub_questions) == 1 and sub_questions[0] == "SINGLE":
-            print("🎭 ORCHESTRATION AGENT: Planner determined a single query is sufficient")
+            logging.info("🎭 ORCHESTRATION AGENT: Planner determined a single query is sufficient")
             result = run_graph_agent(user_question, category, feedback_text)
             
             result_str = str(result)
@@ -849,16 +858,16 @@ def run_orchestrated_agent(user_question, category=None, conversation_history=No
             # Generate token usage report
             final_token_count = print_token_usage_report()
             
-            print(f"✅ ORCHESTRATION AGENT: Single query completed (Total tokens: {final_token_count})")
+            logging.info(f"✅ ORCHESTRATION AGENT: Single query completed (Total tokens: {final_token_count})")
             return result, False
         
         if len(sub_questions) > 1:
-            print("🎭 ORCHESTRATION AGENT: Validating multi-query plan...")
+            logging.info("🎭 ORCHESTRATION AGENT: Validating multi-query plan...")
             
             try:
                 is_multi_necessary = validate_query_plan(user_question, sub_questions, category)
                 if not is_multi_necessary:
-                    print("🎭 ORCHESTRATION AGENT: Validation indicates single query is sufficient")
+                    logging.info("🎭 ORCHESTRATION AGENT: Validation indicates single query is sufficient")
                     result = run_graph_agent(user_question, category, feedback_text)
                     
                     result_str = str(result)
@@ -868,13 +877,13 @@ def run_orchestrated_agent(user_question, category=None, conversation_history=No
                     # Generate token usage report
                     final_token_count = print_token_usage_report()
                     
-                    print(f"✅ ORCHESTRATION AGENT: Single query completed (Total tokens: {final_token_count})")
+                    logging.info(f"✅ ORCHESTRATION AGENT: Single query completed (Total tokens: {final_token_count})")
                     return result, False
             except Exception as e:
-                print(f"⚠️ ORCHESTRATION AGENT: Error in validation, defaulting to multi-query approach - {str(e)}")
+                logging.info(f"⚠️ ORCHESTRATION AGENT: Error in validation, defaulting to multi-query approach - {str(e)}")
                 # Continue with multi-query approach on validation failure
 
-        print("🎭 ORCHESTRATION AGENT: Executing multi-query approach...")
+        logging.info("🎭 ORCHESTRATION AGENT: Executing multi-query approach...")
         results = execute_multi_query(sub_questions, category)
         synthesis = synthesize_results(user_question, results, feedback_text)
 
@@ -893,14 +902,14 @@ def run_orchestrated_agent(user_question, category=None, conversation_history=No
         # Generate token usage report
         final_token_count = print_token_usage_report()
         
-        print(f"✅ ORCHESTRATION AGENT: Multi-query orchestration completed (Total tokens: {final_token_count})")
+        logging.info(f"✅ ORCHESTRATION AGENT: Multi-query orchestration completed (Total tokens: {final_token_count})")
         return final_response, True
     except Exception as e:
         error_msg = str(e)
-        print(f"❌ ORCHESTRATION AGENT: Error in orchestration - {error_msg}")
+        logging.info(f"❌ ORCHESTRATION AGENT: Error in orchestration - {error_msg}")
         
         # Attempt fallback to simple query approach
-        print("🎭 ORCHESTRATION AGENT: Attempting fallback to simple query approach")
+        logging.info("🎭 ORCHESTRATION AGENT: Attempting fallback to simple query approach")
         try:
             result = run_graph_agent(user_question, category, feedback_text)
             
@@ -911,10 +920,10 @@ def run_orchestrated_agent(user_question, category=None, conversation_history=No
             # Generate token usage report
             final_token_count = print_token_usage_report()
             
-            print(f"✅ ORCHESTRATION AGENT: Fallback query completed (Total tokens: {final_token_count})")
+            logging.info(f"✅ ORCHESTRATION AGENT: Fallback query completed (Total tokens: {final_token_count})")
             return result, False
         except Exception as fallback_error:
-            print(f"❌ ORCHESTRATION AGENT: Fallback also failed - {str(fallback_error)}")
+            logging.info(f"❌ ORCHESTRATION AGENT: Fallback also failed - {str(fallback_error)}")
             error_response = {
                 "error": f"Unable to process query: {error_msg}. Fallback also failed: {str(fallback_error)}",
                 "original_question": user_question
