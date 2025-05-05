@@ -6,9 +6,8 @@ import plotly.graph_objects as go
 import sqlite3
 import io
 from datetime import datetime
+from config import DB_NAME
 
-# Database name constant
-DB_NAME = "vector_chunks.db"
 
 # Custom CSS for better UI
 def apply_custom_css():
@@ -71,7 +70,7 @@ def get_data_from_db():
         conn = sqlite3.connect(DB_NAME)
         
         # Query to fetch all records from file_tracking table
-        query = "SELECT upload_id, file_name, date_processed, json_contents, is_processed FROM file_tracking"
+        query = "SELECT file_id, file_name, uploaded_at, is_processed FROM data_files_metadata"
         
         # Load the data into a pandas DataFrame
         df = pd.read_sql_query(query, conn)
@@ -101,11 +100,6 @@ def get_existing_metadata(dataset_type: str):
         return df
     return None
 
-# Load data from database
-@st.cache_data(ttl=300)  # Cache for 5 minutes
-def load_data():
-    return get_data_from_db()
-
 # Create a custom metric component
 def metric_card(title, value, icon, color):
     html = f"""
@@ -125,7 +119,7 @@ def styled_section(title):
     """
 
 # Main function
-def main():
+def render_file_tracking_dashboard():
     # Apply custom CSS
     apply_custom_css()
     
@@ -135,11 +129,10 @@ def main():
         page = "Dashboard"  # Fixed to always show Dashboard
     
     # Load data
-    df = load_data()
+    df = get_data_from_db()
     
     if df.empty:
         st.warning("No data available. Please check your database connection.")
-        return
     
     # Extract file categories
     df['category'] = df['file_name'].apply(lambda x: x.split('_')[1] if len(x.split('_')) > 1 else 'OTHER')
@@ -293,11 +286,11 @@ def main():
         
         # All tab
         with tabs[0]:
-            display_df = df[['file_name', 'date_processed', 'is_processed']].copy()
-            display_df['date_processed'] = pd.to_datetime(display_df['date_processed'], errors='coerce')
-            display_df['date_processed'] = display_df['date_processed'].dt.strftime('%Y-%m-%d')
+            display_df = df[['file_name', 'uploaded_at', 'is_processed']].copy()
+            display_df['uploaded_at'] = pd.to_datetime(display_df['uploaded_at'], errors='coerce')
+            display_df['uploaded_at'] = display_df['uploaded_at'].dt.strftime('%Y-%m-%d')
             display_df['is_processed'] = display_df['is_processed'].apply(lambda x: "✅ Yes" if x == 1 else "❌ No")
-            display_df.columns = ['File Name', 'Date Processed', 'Processed']
+            display_df.columns = ['File Name', 'Date Uploaded', 'Processed']
             
             st.dataframe(
                 display_df,
@@ -311,11 +304,11 @@ def main():
                 category_df = df[df['category'] == category].copy()
                 if not category_df.empty:
                     # after
-                    display_df = category_df[['file_name', 'date_processed', 'is_processed']].copy()
-                    display_df['date_processed'] = pd.to_datetime(display_df['date_processed'], errors='coerce')
-                    display_df['date_processed'] = display_df['date_processed'].dt.strftime('%Y-%m-%d')
+                    display_df = category_df[['file_name', 'uploaded_at', 'is_processed']].copy()
+                    display_df['uploaded_at'] = pd.to_datetime(display_df['uploaded_at'], errors='coerce')
+                    display_df['uploaded_at'] = display_df['uploaded_at'].dt.strftime('%Y-%m-%d')
                     display_df['is_processed'] = display_df['is_processed'].apply(lambda x: "✅ Yes" if x == 1 else "❌ No")
-                    display_df.columns = ['File Name', 'Date Processed', 'Processed']
+                    display_df.columns = ['File Name', 'Date Uploaded', 'Processed']
                     
                     st.dataframe(
                         display_df,
@@ -361,16 +354,16 @@ def main():
             <h3>Processing Timeline</h3>
         """, unsafe_allow_html=True)
         
-        # Convert date_processed to datetime
-        df['date_processed'] = pd.to_datetime(df['date_processed'])
+        # Convert uploaded_at to datetime
+        df['uploaded_at'] = pd.to_datetime(df['uploaded_at'])
         
         # Group by date and category, count files
-        timeline_df = df.groupby([pd.Grouper(key='date_processed', freq='D'), 'category']).size().reset_index(name='count')
+        timeline_df = df.groupby([pd.Grouper(key='uploaded_at', freq='D'), 'category']).size().reset_index(name='count')
         
         # Create timeline chart
         fig = px.line(
             timeline_df, 
-            x='date_processed', 
+            x='uploaded_at', 
             y='count', 
             color='category',
             markers=True,

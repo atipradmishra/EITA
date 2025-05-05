@@ -14,27 +14,39 @@ def create_db():
     """)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS rag_agents (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            agent_id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
             description TEXT,
             model TEXT NOT NULL,
             temperature REAL DEFAULT 0.7,
             s3_folder TEXT, 
             prompt TEXT,
-            is_active INTEGER DEFAULT 1,
+            is_active BOOLEAN DEFAULT TRUE CHECK(is_active IN (0, 1)),
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP
         )
     """)
     cursor.execute("""
+        CREATE TABLE IF NOT EXISTS data_files_metadata (
+            file_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            file_name TEXT,
+            category TEXT,
+            is_processed BOOLEAN DEFAULT TRUE CHECK(is_processed IN (0, 1)),
+            uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS feedback_logs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            log_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            agent_id INTEGER,
             query TEXT NOT NULL,
             answer TEXT NOT NULL,
-            category TEXT,
+            category TEXT NOT NULL,
             user_feedback BOOLEAN DEFAULT 1,
             feedback_comment TEXT,
-            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            latency REAL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (agent_id) REFERENCES rag_agents(agent_id)
         )
     """)
     cursor.execute("""
@@ -55,14 +67,6 @@ def create_db():
             uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS graph_data (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            file_name TEXT,
-            json_contents TEXT,
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS daily_graph_data (
             report_date TEXT PRIMARY KEY,
@@ -72,21 +76,13 @@ def create_db():
         )
     ''')
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS graph_file_metadata (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            file_name TEXT UNIQUE,
-            processed_at TEXT DEFAULT CURRENT_TIMESTAMP,
-            is_processed INTEGER DEFAULT 1
-        )
-    """)
-    cursor.execute("""
         CREATE TABLE IF NOT EXISTS daily_ai_summary (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            client TEXT,
+            category TEXT,
             summary TEXT NOT NULL,
-            date TIMESTAMP 
+            date TIMESTAMP
         )
-        """)
+    """)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS Business_Context (
             id INTEGER PRIMARY KEY AUTOINCREMENT,

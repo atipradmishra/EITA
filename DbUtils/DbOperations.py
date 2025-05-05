@@ -5,18 +5,6 @@ import io
 import json
 from config import DB_NAME
 
-def get_feedback_logs():
-    conn = sqlite3.connect(DB_NAME)
-    query = """
-    SELECT id, query, answer, feedback_comment, user_feedback, timestamp
-    FROM feedback_logs
-    """
-    feedback_df = pd.read_sql_query(query, conn)
-    conn.close()
-    feedback_df["User Feedback"] = feedback_df["user_feedback"].apply(lambda x: "👍 Yes" if x == 1 else "👎 No")
-    feedback_df["Timestamp"] = pd.to_datetime(feedback_df["timestamp"])
-    return feedback_df
-
 def get_existing_metadata(dataset_type: str):
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
@@ -32,15 +20,28 @@ def get_existing_metadata(dataset_type: str):
         return df
     return None
 
-def add_feedback_log(query, answer, category):
+def get__metadata_file_path(dataset_type: str):
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT s3_path, filename FROM metadata_files
+        WHERE filename LIKE ? ORDER BY uploaded_at DESC LIMIT 1
+    """, (f"%{dataset_type.upper()}%",))
+    row = cursor.fetchone()
+    conn.close()
+    if row:
+        return row
+    return None
+
+def add_feedback_log(query, answer, agent, latency, category):
 
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
 
     cursor.execute("""
-        INSERT INTO feedback_logs (query, answer, category)
-        VALUES (?, ?, ?)
-    """, (query, answer, category))
+        INSERT INTO feedback_logs (query, answer, agent_id,latency, category)
+        VALUES (?, ?, ?,?,?)
+    """, (query, answer, agent,latency, category))
 
     # Get the ID of the row we just inserted
     log_id = cursor.lastrowid
@@ -67,12 +68,25 @@ def update_feedback_log(feedback, comment, log_id):
 def load_feedback_data():
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM feedback_logs")
+    cursor.execute(
+        '''
+        SELECT
+            log_id,
+            query,
+            answer,
+            category,
+            user_feedback,
+            feedback_comment,
+            latency,
+            created_at
+        FROM feedback_logs
+        '''
+        )
     rows = cursor.fetchall()
     conn.close()
 
     # Convert rows to list of dictionaries
-    columns = ["ID", "Query", "Answer", "Category", "User Feedback", "Feedback Comment", "Timestamp"]
+    columns = ["ID", "User Query", "Bot Answer", "Category", "User Feedback", "Feedback Comment", "Latency", "Query Timestamp"]
     feedback_logs = []
     for row in rows:
         feedback_logs.append(dict(zip(columns, row)))
@@ -156,3 +170,41 @@ def save_grouped_data_to_db(grouped_output, category):
 
     conn.commit()
     conn.close()
+
+def add_data_file_metadata(file_name, category):
+
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        INSERT INTO data_files_metadata (file_name, category)
+        VALUES (?, ?)
+    """, (file_name, category))
+
+    conn.commit()
+    conn.close()
+
+    return "✅ File tracking added successfully!"
+
+def get_all_agents():
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT 
+            ra.agent_id,
+            ra.name,
+            ra.s3_folder,
+            ra.model,
+            ra.temperature,
+            ra.prompt,
+            ra.is_active
+        FROM 
+            rag_agents ra
+    """)
+    rows = cursor.fetchall()
+    conn.close()
+    columns = ["id", "name", "s3_folder", "model", "temperature", "prompt",'is_active']
+    agents = []
+    for row in rows:
+        agents.append(dict(zip(columns, row)))
+    return agents  

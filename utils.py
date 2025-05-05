@@ -8,6 +8,7 @@ import json
 import io
 import re
 import datetime
+from io import BytesIO
 from sklearn.feature_extraction.text import TfidfVectorizer
 from DbUtils.DbOperations import load_feedback_data, load_business_context
 from config import aws_access_key, aws_secret_key, client, DB_NAME, VALID_BUCKET, REJECTED_BUCKET
@@ -106,7 +107,7 @@ def validate_against_metadata(file_df: pd.DataFrame, metadata_df: pd.DataFrame, 
         return False
 
 
-def query_sqlite_json_with_openai(user_question, category=None):
+def query_sqlite_json_with_openai(user_question, category,bot_prompt_instr):
     from DbUtils.sqlquery import run_orchestrated_agent
 
         # Ensure conversation_history exists in session state
@@ -157,22 +158,26 @@ def query_sqlite_json_with_openai(user_question, category=None):
     file_names = []
 
     # Step 3: Pull Prompt Instruction for this category
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    if category == "CO2":
-        cursor.execute("SELECT prompt FROM agent_detail WHERE name = 'CO2 AGENT'")
-    elif category == "Natural Gas":
-        cursor.execute("SELECT prompt FROM agent_detail WHERE name = 'NG AGENT'")
-    elif category == "Power":
-        cursor.execute("SELECT prompt FROM agent_detail WHERE name = 'PW AGENT'")
-    else:
-        cursor.execute("SELECT prompt FROM agent_detail WHERE name = 'PW AGENT'")
-    row = cursor.fetchone()
-    conn.close()
+    # conn = sqlite3.connect(DB_NAME)
+    # cursor = conn.cursor()
+    # if category == "CO2":
+    #     cursor.execute("SELECT prompt FROM agent_detail WHERE name = 'CO2 AGENT'")
+    # elif category == "Natural Gas":
+    #     cursor.execute("SELECT prompt FROM agent_detail WHERE name = 'NG AGENT'")
+    # elif category == "Power":
+    #     cursor.execute("SELECT prompt FROM agent_detail WHERE name = 'PW AGENT'")
+    # else:
+    #     cursor.execute("SELECT prompt FROM agent_detail WHERE name = 'PW AGENT'")
+    # row = cursor.fetchone()
+    # conn.close()
 
-    if not row:
+    # if not row:
+    #     return "⚠️ No Prompt Instruction Found."
+    # prompt_Instr = row[0]
+    
+    prompt_Instr = bot_prompt_instr
+    if prompt_Instr == None:
         return "⚠️ No Prompt Instruction Found."
-    prompt_Instr = row[0]
 
     # Step 4: Format business glossary
     business_context_text = "\n".join(
@@ -431,3 +436,16 @@ def retrieve_feedback_insights(query, faiss_index, feedback_data_indexed, top_k=
         return []
 
 
+def download_file_from_s3(s3_key, bucket_name):
+    s3 = boto3.client(
+            "s3",
+            region_name='us-east-1'
+        )
+    try:
+        file_obj = BytesIO()
+        s3.download_fileobj(bucket_name, s3_key, file_obj)
+        file_obj.seek(0)
+        return file_obj
+    except Exception as e:
+        print(f"S3 download error: {e}")
+        return None

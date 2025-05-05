@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 import re
 from openai import OpenAI
 from config import aws_access_key, aws_secret_key, client, DB_NAME, VALID_BUCKET, REJECTED_BUCKET
-from DataProcessing.GraphDataProcess import process_and_save_from_s3, process_csv_data_to_json , save_rawdata_to_db, process_and_save_byfile,process_and_save_from_db
+from DataProcessing.GraphDataProcess import process_and_save_byfile,process_and_save_pw_from_db
 from GraphFunctions.dashboardgraphs import plot_delta_volume_from_reports, plot_delta_market_from_reports,show_top5_movers
 from GraphFunctions.heatmaptable import show_delta_heatmap
 from GraphFunctions.dashboardcards import show_nop_cards,render_summary_card
@@ -18,9 +18,9 @@ from GraphFunctions.querygraphs import plot_combined_graph_CO2, plot_combined_gr
 from DbUtils.models import create_db
 from DbUtils.auth import register_user, authenticate_user, logout
 from DataProcessing.DataProcess import process_files_from_s3_folder,process_metadata_alias
-from utils import upload_to_s3,save_metadata_to_db, upload_metadatafile_to_s3, validate_against_metadata,query_sqlite_json_with_openai,create_faiss_index,prepare_training_data,save_training_data,extract_date_from_query,calculate_confidence_score,retrieve_feedback_insights
-from DbUtils.DbOperations import add_feedback_log, get_feedback_logs, update_feedback_log, get_existing_metadata, load_feedback_data, load_data_for_dashboard,fetch_latest_reports
-from dashboards.file_tracking_dashboard import main as render_file_tracking_dashboard
+from utils import download_file_from_s3,upload_to_s3,save_metadata_to_db, upload_metadatafile_to_s3, validate_against_metadata,query_sqlite_json_with_openai,create_faiss_index,prepare_training_data,save_training_data,extract_date_from_query,calculate_confidence_score,retrieve_feedback_insights
+from DbUtils.DbOperations import get__metadata_file_path,add_feedback_log, get_all_agents, update_feedback_log, get_existing_metadata, load_feedback_data, load_data_for_dashboard,fetch_latest_reports
+from dashboards.file_tracking_dashboard import render_file_tracking_dashboard
 from dashboards.rag_dashboard import rag_agents_dashboard
 from dashboards.manage_rag_page import manage_rag_agents
 
@@ -53,7 +53,6 @@ if "conversation" not in st.session_state:
             "content": "You are a strict assistant. If feedback directly answers the question, always prioritize it over the data."
         }
     ]
-
 if 'conversation_history' not in st.session_state:
     st.session_state.conversation_history = []
 
@@ -178,10 +177,68 @@ else:
     elif st.session_state.sub_section == "Data Pipeline":
         st.header("📊 Data Pipeline")
         st.subheader("🔧 Data Pipeline -> Energy Training")
-        st.write("Upload and manage your data files efficiently.")
-        st.markdown("---")
+        st.write("Download metadata from S3 and upload new metadata to S3.")
 
-        # Section 1: CO2 Data Upload
+        st.markdown("### 📥 Download Existing Metadata")
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            if st.button("Download CO2 Metadata File from S3"):
+                try:
+                    metadata_s3_path = get__metadata_file_path("CO2")
+                    file_obj = download_file_from_s3(metadata_s3_path, VALID_BUCKET)
+                    if file_obj:
+                        st.success("✅ Metadata file fetched successfully.")
+                        st.download_button(
+                            label="📄 Click to Download Metadata CSV",
+                            data=file_obj.getvalue(),
+                            file_name="metadata.csv",
+                            mime="text/csv"
+                        )
+                    else:
+                        st.warning("⚠️ No metadata file found in S3.")
+                except Exception as e:
+                    st.error(f"❌ Error downloading metadata: {e}")
+        
+        with col2:
+            if st.button("Download NG Metadata File from S3"):
+                try:
+                    metadata_s3_path = get__metadata_file_path("NG")
+                    file_obj = download_file_from_s3(metadata_s3_path, VALID_BUCKET)
+                    if file_obj:
+                        st.success("✅ Metadata file fetched successfully.")
+                        st.download_button(
+                            label="📄 Click to Download Metadata CSV",
+                            data=file_obj.getvalue(),
+                            file_name="metadata.csv",
+                            mime="text/csv"
+                        )
+                    else:
+                        st.warning("⚠️ No metadata file found in S3.")
+                except Exception as e:
+                    st.error(f"❌ Error downloading metadata: {e}")
+
+        with col3:
+            if st.button("Download PW Metadata File from S3"):
+                try:
+                    metadata = get__metadata_file_path("PW")
+                    metadata_s3_path = metadata[0]
+                    file_obj = download_file_from_s3(metadata_s3_path, VALID_BUCKET)
+                    if file_obj:
+                        st.success("✅ Metadata file fetched successfully.")
+                        st.download_button(
+                            label="📄 Click to Download Metadata CSV",
+                            data=file_obj.getvalue(),
+                            file_name=metadata[1],
+                            mime="text/csv"
+                        )
+                    else:
+                        st.warning("⚠️ No metadata file found in S3.")
+                except Exception as e:
+                    st.error(f"❌ Error downloading metadata: {e}")
+
+
+        st.markdown("---")
+        st.write("Upload and manage your data files efficiently.")
         st.markdown("### 🗂️ Data Upload")
         folder = st.selectbox("Select Folder to Upload", ["CO2","NG", "PW"])
         col1, col2 = st.columns(2)
@@ -219,8 +276,7 @@ else:
                 try:
                     for f in raw_files1:
                         file_name = f.name
-                        conn = sqlite3.connect(DB_NAME)
-                        process_and_save_byfile(conn, f,folder)
+                        process_and_save_byfile(f)
                         try:
                             f.seek(0)
                             df = pd.read_csv(f)
@@ -240,7 +296,7 @@ else:
             else:
                 st.warning("⚠️ Metadata and raw files are required to proceed.")
             
-        
+        st.markdown("---")
         st.markdown("### 📘 Business Domain Dictionary")
         business_dict_file = st.file_uploader("Upload Business Domain Dictionary (.xlsx)", type=["xlsx"], key="business_dict_file")
 
@@ -289,6 +345,26 @@ else:
                 st.error(f"❌ Error processing file: {e}")
         else:
             st.info("ℹ️ Please upload a Business Domain Dictionary Excel (.xlsx) file.")
+        
+        st.markdown("---")
+        st.markdown("### 📥 Download Existing Business Domain Dictionary file.")
+        if st.button("Download Business Domain Dictionary File"):
+            st.success("✅ Business Domain Dictionary file fetched successfully.")
+            # try:
+            #     metadata_s3_path = get__metadata_file_path("CO2")
+            #     file_obj = download_file_from_s3(metadata_s3_path, VALID_BUCKET)
+            #     if file_obj:
+            #         st.success("✅ Metadata file fetched successfully.")
+            #         st.download_button(
+            #             label="📄 Click to Download Metadata CSV",
+            #             data=file_obj.getvalue(),
+            #             file_name="metadata.csv",
+            #             mime="text/csv"
+            #         )
+            #     else:
+            #         st.warning("⚠️ No metadata file found in S3.")
+            # except Exception as e:
+            #     st.error(f"❌ Error downloading metadata: {e}")
 
         # st.markdown("---")
 
@@ -419,37 +495,37 @@ else:
     elif st.session_state.sub_section == "RAG Dashboard":
         rag_agents_dashboard()
     
-    # elif st.session_state.sub_section == "Manage RAG Agents":
-    #     # manage_rag_agents()
-    
     elif st.session_state.sub_section == "Manage RAG Agents":
-        prefix_fields = {
-            "CO2": ['VOLUME', 'TRDVAL', 'MKTVAL', 'TRDPRC'],
-            "Natural Gas": ['VOLUME', 'VOLUME_TOTAL', 'QTY_PHY', 'MKT_VAL', 'QTY_FIN', 'TRD_VAL'],
-            "Power": ['VOLUME_BL', 'VOLUME_PK', 'VOLUME_OFPK', 'MKT_VAL_BL', 'MKT_VAL_PK', 'MKT_VAL_OFPK', 'TRD_VAL_BL', 'TRD_VAL_PK', 'TRD_VAL_OFPK']
-        }
-        name = st.text_input("RAG  Agent Name")
-        col1, col2 = st.columns(2)
-        with col1:
-            bucket = st.selectbox("Select Bucket Name(S3)", ["etrm-etai-poc-chub","etrm-etai-poc", "etrm-etai-poc-ng"])
-        with col2:
-            prefix = st.selectbox("Select Prefix", list(prefix_fields.keys()), index=0)
-        col3, col4 = st.columns(2)
-        with col3:
-            model = st.selectbox("Model", ["OpenAI GPT-3.5", "OpenAI GPT-4", "Llama 2", "Claude 3.5", "Claude 4", "Custom Model"])
-        with col4:
-            temp = st.slider("Temperature (Creativity)", 0.0, 1.0, 0.7, 0.1)
-        col5, col6 = st.columns(2)
-        with col5:
-            metadata_file = st.file_uploader("Upload Data Dictionary (CSV)", type=["csv"])
-        with col6:
-            uploaded_file = st.file_uploader("Upload Transaction Log (TXT, PDF, CSV, DOCX)", type=["txt", "pdf", "csv", "docx"])
-        prompt = st.text_area("📝 Provide Prompt Instructions", key='prompt')
-        if st.button("Submit & Process Data"):
-            prefix_value = {"CO2": "CO2", "Natural Gas": "NG", "Power": "PW"}.get(prefix, "misc")
-            process_files_from_s3_folder(VALID_BUCKET, prefix_value)
-            st.success("Data processed successfully!")
-            # add_agent_detail(name, model, temp, prompt)
+        manage_rag_agents()
+    
+    # elif st.session_state.sub_section == "Manage RAG Agents":
+    #     prefix_fields = {
+    #         "CO2": ['VOLUME', 'TRDVAL', 'MKTVAL', 'TRDPRC'],
+    #         "Natural Gas": ['VOLUME', 'VOLUME_TOTAL', 'QTY_PHY', 'MKT_VAL', 'QTY_FIN', 'TRD_VAL'],
+    #         "Power": ['VOLUME_BL', 'VOLUME_PK', 'VOLUME_OFPK', 'MKT_VAL_BL', 'MKT_VAL_PK', 'MKT_VAL_OFPK', 'TRD_VAL_BL', 'TRD_VAL_PK', 'TRD_VAL_OFPK']
+    #     }
+    #     name = st.text_input("RAG  Agent Name")
+    #     col1, col2 = st.columns(2)
+    #     with col1:
+    #         bucket = st.selectbox("Select Bucket Name(S3)", ["etrm-etai-poc-chub","etrm-etai-poc", "etrm-etai-poc-ng"])
+    #     with col2:
+    #         prefix = st.selectbox("Select Prefix", list(prefix_fields.keys()), index=0)
+    #     col3, col4 = st.columns(2)
+    #     with col3:
+    #         model = st.selectbox("Model", ["OpenAI GPT-3.5", "OpenAI GPT-4", "Llama 2", "Claude 3.5", "Claude 4", "Custom Model"])
+    #     with col4:
+    #         temp = st.slider("Temperature (Creativity)", 0.0, 1.0, 0.7, 0.1)
+    #     col5, col6 = st.columns(2)
+    #     with col5:
+    #         metadata_file = st.file_uploader("Upload Data Dictionary (CSV)", type=["csv"])
+    #     with col6:
+    #         uploaded_file = st.file_uploader("Upload Transaction Log (TXT, PDF, CSV, DOCX)", type=["txt", "pdf", "csv", "docx"])
+    #     prompt = st.text_area("📝 Provide Prompt Instructions", key='prompt')
+    #     if st.button("Submit & Process Data"):
+    #         prefix_value = {"CO2": "CO2", "Natural Gas": "NG", "Power": "PW"}.get(prefix, "misc")
+    #         process_files_from_s3_folder(VALID_BUCKET, prefix_value)
+    #         st.success("Data processed successfully!")
+    #         # add_agent_detail(name, model, temp, prompt)
 
     elif st.session_state.sub_section == "Fine Tuning":
         st.subheader("📄 Fine Tuning")
@@ -461,7 +537,7 @@ else:
     elif st.session_state.sub_section == "Dashboard":
         st.subheader("📚 Dashboard")
         # if st.button("🔄 Update from S3"):
-        #     process_and_save_from_db()
+        #     process_and_save_pw_from_db()
         #     st.success("Data updated!")
 
         reports_data = fetch_latest_reports()
@@ -539,10 +615,25 @@ else:
         st.subheader("📊 Energy Trading Analysis")
         st.write("💬 Ask Your Financial or Commodity Question")
 
+        agents = get_all_agents()
         col1, col2 = st.columns([6, 1])
         with col1:
-            category_options = ["CO2", "Natural Gas", "Power"]
-            selected_category = st.selectbox("Select Data Category", category_options)
+            agent_data = {
+                agent['name']: {
+                    'folder': agent['s3_folder'],
+                    'prompt': agent['prompt'],
+                    'agent_id' : agent['id']
+                } 
+                for agent in agents
+            }
+
+            options = [agent['name'] for agent in agents]
+            selected_category = st.selectbox("Select AI Agent", options)
+
+        # col1, col2 = st.columns([6, 1])
+        # with col1:
+        #     category_options = ["CO2", "Natural Gas", "Power"]
+        #     selected_category = st.selectbox("Select Data Category", category_options)
 
         with col2:
             st.write(" ")
@@ -585,7 +676,7 @@ else:
                         st.session_state[f"show_comment_{i}"] = False
 
         if prompt := st.chat_input("Ask a question... e.g(What is the total Price Value on 13 Nov 2024?)"):
-
+            start_time = time.time()
             st.chat_message("user").markdown(prompt)
             st.session_state.messages.append({
                 "role": "user",
@@ -593,8 +684,19 @@ else:
             })
 
             with st.spinner("Thinking..."):
-                response = query_sqlite_json_with_openai(prompt, selected_category)
-                log_id = add_feedback_log(prompt, response, selected_category)
+                folder_name = None
+                bot_prompt_instr = None
+                agent_id = None
+                if selected_category:
+                    data = agent_data[selected_category]
+                    folder_name = data['folder']
+                    bot_prompt_instr = data['prompt']
+                    agent_id = data['agent_id']
+                    category = data['folder']
+                response = query_sqlite_json_with_openai(prompt, folder_name,bot_prompt_instr)
+                end_time = time.time()
+                latency = end_time - start_time
+                log_id = add_feedback_log(prompt, response, agent_id,latency, category)
 
             st.chat_message("assistant").markdown(response)
             st.session_state.messages.append({
@@ -627,30 +729,35 @@ else:
 
     elif st.session_state.sub_section == "User Feedback":
         st.subheader("📝 User Feedback Dashboard")
-        feedback_df = get_feedback_logs()
+        data = load_feedback_data()
+        feedback_df = pd.DataFrame(data)
+        feedback_df["Query Timestamp"] = pd.to_datetime(feedback_df["Query Timestamp"])
         if not feedback_df.empty:
             st.subheader("📋 Collected Feedback")
-            display_df = feedback_df[["id", "query", "answer", "feedback_comment", "User Feedback", "Timestamp"]]
+            display_df = feedback_df[["ID", "User Query", "Bot Answer", "Category", "User Feedback", "Feedback Comment","Latency", "Query Timestamp"]]
             st.dataframe(display_df, use_container_width=True)
             st.subheader("📊 Feedback Summary")
-            positive_feedback_count = (feedback_df["user_feedback"] == 1).sum()
-            negative_feedback_count = (feedback_df["user_feedback"] == 0).sum()
-            st.write(f"✅ **Positive Feedback:** {positive_feedback_count}")
-            st.write(f"❌ **Negative Feedback:** {negative_feedback_count}")
-            st.subheader("📊 Feedback Trends Over Time")
-            feedback_over_time = (
-                feedback_df.groupby(feedback_df["Timestamp"].dt.date)["feedback_comment"]
-                .value_counts()
-                .unstack()
-                .fillna(0)
-            )
-            fig, ax = plt.subplots(figsize=(10, 6))
-            feedback_over_time.plot(kind="bar", ax=ax, stacked=True)
-            ax.set_xlabel("Date")
-            ax.set_ylabel("Number of Feedbacks")
-            ax.set_title("User Feedback Trends")
-            plt.xticks(rotation=45)
-            st.pyplot(fig)
+            positive_feedback_count = (feedback_df["User Feedback"] == 1).sum()
+            negative_feedback_count = (feedback_df["User Feedback"] == 0).sum()
+            if negative_feedback_count == 0:
+                st.warning("No negative feedback logs found in the database.")
+            else:
+                st.write(f"✅ **Positive Feedback:** {positive_feedback_count}")
+                st.write(f"❌ **Negative Feedback:** {negative_feedback_count}")
+                st.subheader("📊 Feedback Trends Over Time")
+                feedback_over_time = (
+                    feedback_df.groupby(feedback_df["Query Timestamp"].dt.date)["Feedback Comment"]
+                    .value_counts()
+                    .unstack()
+                    .fillna(0)
+                )
+                fig, ax = plt.subplots(figsize=(10, 6))
+                feedback_over_time.plot(kind="bar", ax=ax, stacked=True)
+                ax.set_xlabel("Date")
+                ax.set_ylabel("Number of Feedbacks")
+                ax.set_title("User Feedback Trends")
+                plt.xticks(rotation=45)
+                st.pyplot(fig)
             csv_feedback = display_df.to_csv(index=False).encode("utf-8")
             st.download_button("📥 Download Feedback as CSV", csv_feedback, "user_feedback.csv", "text/csv", key="download-feedback")
         else:
