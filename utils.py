@@ -439,6 +439,8 @@ def retrieve_feedback_insights(query, faiss_index, feedback_data_indexed, top_k=
 def download_file_from_s3(s3_key, bucket_name):
     s3 = boto3.client(
             "s3",
+            aws_access_key_id=aws_access_key,
+            aws_secret_access_key=aws_secret_key,
             region_name='us-east-1'
         )
     try:
