@@ -184,14 +184,15 @@ else:
         with col1:
             if st.button("Download CO2 Metadata File from S3"):
                 try:
-                    metadata_s3_path = get__metadata_file_path("CO2")
+                    metadata = get__metadata_file_path("CO2")
+                    metadata_s3_path = metadata[0]
                     file_obj = download_file_from_s3(metadata_s3_path, VALID_BUCKET)
                     if file_obj:
                         st.success("✅ Metadata file fetched successfully.")
                         st.download_button(
                             label="📄 Click to Download Metadata CSV",
                             data=file_obj.getvalue(),
-                            file_name="metadata.csv",
+                            file_name=metadata[1],
                             mime="text/csv"
                         )
                     else:
@@ -202,14 +203,15 @@ else:
         with col2:
             if st.button("Download NG Metadata File from S3"):
                 try:
-                    metadata_s3_path = get__metadata_file_path("NG")
+                    metadata = get__metadata_file_path("NG")
+                    metadata_s3_path = metadata[0]
                     file_obj = download_file_from_s3(metadata_s3_path, VALID_BUCKET)
                     if file_obj:
                         st.success("✅ Metadata file fetched successfully.")
                         st.download_button(
                             label="📄 Click to Download Metadata CSV",
                             data=file_obj.getvalue(),
-                            file_name="metadata.csv",
+                            file_name=metadata[1],
                             mime="text/csv"
                         )
                     else:
