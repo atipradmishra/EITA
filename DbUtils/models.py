@@ -31,6 +31,7 @@ def create_db():
             file_id INTEGER PRIMARY KEY AUTOINCREMENT,
             file_name TEXT,
             category TEXT,
+            report_date TEXT,
             is_processed BOOLEAN DEFAULT TRUE CHECK(is_processed IN (0, 1)),
             uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )

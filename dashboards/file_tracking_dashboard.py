@@ -70,7 +70,7 @@ def get_data_from_db():
         conn = sqlite3.connect(DB_NAME)
         
         # Query to fetch all records from file_tracking table
-        query = "SELECT file_id, file_name, uploaded_at, is_processed FROM data_files_metadata"
+        query = "SELECT file_id, file_name, report_date, uploaded_at, is_processed FROM data_files_metadata"
         
         # Load the data into a pandas DataFrame
         df = pd.read_sql_query(query, conn)
@@ -286,11 +286,11 @@ def render_file_tracking_dashboard():
         
         # All tab
         with tabs[0]:
-            display_df = df[['file_name', 'uploaded_at', 'is_processed']].copy()
+            display_df = df[['file_name', 'report_date', 'uploaded_at', 'is_processed']].copy()
             display_df['uploaded_at'] = pd.to_datetime(display_df['uploaded_at'], errors='coerce')
             display_df['uploaded_at'] = display_df['uploaded_at'].dt.strftime('%Y-%m-%d')
             display_df['is_processed'] = display_df['is_processed'].apply(lambda x: "✅ Yes" if x == 1 else "❌ No")
-            display_df.columns = ['File Name', 'Date Uploaded', 'Processed']
+            display_df.columns = ['File Name','Report Date', 'Date Uploaded', 'Processed']
             
             st.dataframe(
                 display_df,
@@ -304,11 +304,11 @@ def render_file_tracking_dashboard():
                 category_df = df[df['category'] == category].copy()
                 if not category_df.empty:
                     # after
-                    display_df = category_df[['file_name', 'uploaded_at', 'is_processed']].copy()
+                    display_df = category_df[['file_name', 'report_date' , 'uploaded_at', 'is_processed']].copy()
                     display_df['uploaded_at'] = pd.to_datetime(display_df['uploaded_at'], errors='coerce')
                     display_df['uploaded_at'] = display_df['uploaded_at'].dt.strftime('%Y-%m-%d')
                     display_df['is_processed'] = display_df['is_processed'].apply(lambda x: "✅ Yes" if x == 1 else "❌ No")
-                    display_df.columns = ['File Name', 'Date Uploaded', 'Processed']
+                    display_df.columns = ['File Name', 'Report Date', 'Date Uploaded', 'Processed']
                     
                     st.dataframe(
                         display_df,

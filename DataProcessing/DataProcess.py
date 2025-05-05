@@ -36,12 +36,38 @@ def process_files_from_s3_folder(bucket_name, folder_prefix):
                 obj_data = s3.get_object(Bucket=bucket_name, Key=file_key)
                 file_stream = io.BytesIO(obj_data["Body"].read())
                 df = pd.read_csv(file_stream)
+                df = df.loc[:, ~df.columns.str.contains("^Unnamed")]
+                df.columns = df.columns.str.upper().str.replace(' ', '_')
                 df_processed = process_and_store_file(file_name, df, cursor,folder_prefix)
                 print(f"✅ df_processed: {df_processed}")
                 conn.commit()
                 print(f"✅ Processed and saved: {file_name}")
             except Exception as e:
                 print(f"❌ Failed to process {file_name}: {e}")
+
+    except Exception as e:
+        print(f"❌ Error accessing S3: {e}")
+    finally:
+        conn.close()
+
+def process_file_to_filetracking(file,folder_prefix):
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    file_name = file.name
+    try:
+        cursor.execute("SELECT 1 FROM file_tracking WHERE file_name = ? AND is_processed = 1", (file_name,))
+        if cursor.fetchone():
+            print(f"⏭️ Skipping already processed file: {file_name}")
+            return
+        try:
+            df = pd.read_csv(file)
+            df.columns = df.columns.str.upper().str.replace(' ', '_')
+            df_processed = process_and_store_file(file_name, df, cursor,folder_prefix)
+            print(f"✅ df_processed: {df_processed}")
+            conn.commit()
+            print(f"✅ Processed and saved: {file_name}")
+        except Exception as e:
+            print(f"❌ Failed to process {file_name}: {e}")
 
     except Exception as e:
         print(f"❌ Error accessing S3: {e}")

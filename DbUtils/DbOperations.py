@@ -171,15 +171,15 @@ def save_grouped_data_to_db(grouped_output, category):
     conn.commit()
     conn.close()
 
-def add_data_file_metadata(file_name, category):
+def add_data_file_metadata(file_name, category, report_date):
 
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
 
     cursor.execute("""
-        INSERT INTO data_files_metadata (file_name, category)
-        VALUES (?, ?)
-    """, (file_name, category))
+        INSERT INTO data_files_metadata (file_name, category, report_date)
+        VALUES (?, ?,?)
+    """, (file_name, category, report_date))
 
     conn.commit()
     conn.close()

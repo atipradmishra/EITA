@@ -17,7 +17,7 @@ from GraphFunctions.dashboardcards import show_nop_cards,render_summary_card
 from GraphFunctions.querygraphs import plot_combined_graph_CO2, plot_combined_graph_NG, plot_combined_graph_PW, plot_graph_based_on_prompt_all, plot_dimension_data, plot_single_date_metrics, plot_time_series
 from DbUtils.models import create_db
 from DbUtils.auth import register_user, authenticate_user, logout
-from DataProcessing.DataProcess import process_files_from_s3_folder,process_metadata_alias
+from DataProcessing.DataProcess import process_files_from_s3_folder,process_metadata_alias,process_file_to_filetracking
 from utils import download_file_from_s3,upload_to_s3,save_metadata_to_db, upload_metadatafile_to_s3, validate_against_metadata,query_sqlite_json_with_openai,create_faiss_index,prepare_training_data,save_training_data,extract_date_from_query,calculate_confidence_score,retrieve_feedback_insights
 from DbUtils.DbOperations import get__metadata_file_path,add_feedback_log, get_all_agents, update_feedback_log, get_existing_metadata, load_feedback_data, load_data_for_dashboard,fetch_latest_reports
 from dashboards.file_tracking_dashboard import render_file_tracking_dashboard
@@ -297,6 +297,7 @@ else:
                     for f in raw_files1:
                         file_name = f.name
                         process_and_save_byfile(f)
+                        process_file_to_filetracking(f,folder)
                         try:
                             f.seek(0)
                             df = pd.read_csv(f)

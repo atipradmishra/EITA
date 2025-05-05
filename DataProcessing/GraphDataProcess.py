@@ -75,7 +75,7 @@ def process_and_save_byfile(file):
                     print(f"⚠️ Unknown category: {category}")
                     return
 
-                add_data_file_metadata(file_name, category)
+                add_data_file_metadata(file_name, category, df['REPORT_DATE'].iloc[0])
 
             except Exception as e:
                 print(f"❌ Error processing file {file_name}: {e}")
