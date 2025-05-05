@@ -37,8 +37,9 @@ def process_and_save_byfile(file):
 
             try:
                 df = pd.read_csv(file)
+                df = df.loc[:, ~df.columns.str.contains("^Unnamed")]
                 df.columns = df.columns.str.upper().str.replace(' ', '_')
-                df['REPORT_DATE'] = pd.to_datetime(df['REPORT_DATE'], errors='coerce', dayfirst=False).dt.date
+                df['REPORT_DATE'] = pd.to_datetime(df['REPORT_DATE'], errors='coerce', dayfirst=True).dt.date
                 if category == "CO2":
                     df['MKTVAL'] = df['MKTVAL'].astype(str).str.replace(',', '').astype(float)
                     df['VOLUME'] = df['VOLUME'].astype(str).str.replace(',', '').astype(float)
